@@ -202,6 +202,39 @@ public sealed class CodeBlockEditorTests
         }
     }
 
+    [Theory]
+    [InlineData(14)]
+    [InlineData(20)]
+    public Task CodeFrameUsesCompactPaddingAroundContentRows(double fontSize) => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = "# Пример\n\n```\nПривет как дела\n```\n\nПосле блока", Background = Brushes.LemonChiffon };
+        editor.EnableNoteTitle(); editor.SetAppearance(new Note { FontSize = fontSize });
+        var host = new Window { Content = editor, Width = 330, Height = 280, Left = -10000, Top = -10000, ShowActivated = false, ShowInTaskbar = false };
+        try
+        {
+            host.Show(); host.UpdateLayout(); var view = editor.TextArea.TextView;
+            var frame = Assert.Single(editor.Layout.CodeFrames);
+            var renderer = Assert.Single(view.BackgroundRenderers.OfType<CodeBlockBackground>());
+            var bounds = renderer.Bounds(view, frame)!.Value;
+            var body = view.GetOrConstructVisualLine(editor.Document.GetLineByOffset(frame.ContentStart!.Value));
+            var scale = fontSize / 14;
+            Assert.Equal(6 * scale - .5, body.VisualTop - view.ScrollOffset.Y - bounds.Top, 4);
+            Assert.Equal(10 * scale - .5, bounds.Bottom - (body.VisualTop + body.Height - view.ScrollOffset.Y), 4);
+            Assert.True(bounds.Height < body.Height * 3);
+            editor.Select(frame.ContentStart.Value, 0); editor.TextArea.PerformTextInput("Ещё строка\n"); host.UpdateLayout();
+            Assert.Equal("Ещё строка", editor.Document.GetText(editor.Document.GetLineByOffset(frame.ContentStart.Value)));
+            Assert.Equal("Привет как дела", editor.Document.GetText(editor.Document.GetLineByOffset(editor.CaretOffset)));
+            if (Environment.GetEnvironmentVariable("DESKTOPNOTES_TEST_RENDER_DIR") is { } directory)
+            {
+                Directory.CreateDirectory(directory);
+                var bitmap = new RenderTargetBitmap(330, 280, 96, 96, PixelFormats.Pbgra32); bitmap.Render(editor);
+                var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                using var file = File.Create(Path.Combine(directory, $"code-padding-{fontSize}.png")); encoder.Save(file);
+            }
+        }
+        finally { host.Close(); }
+    });
+
     private static Task OnSta(Action action)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
