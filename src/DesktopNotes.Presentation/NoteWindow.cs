@@ -27,6 +27,7 @@ public sealed class NoteWindow : Window
     private readonly TextBox _titleEditor;
     private readonly Border _frame = new() { BorderThickness = new Thickness(2), IsHitTestVisible = false };
     private readonly EdgeLinkHandles _linkHandles;
+    private readonly NoteFormattingToolbar _formatting;
     private readonly Border _connectionFrame = new() { BorderThickness = new Thickness(1.2), IsHitTestVisible = false };
     private HwndSource? _source;
     internal Guid NoteId => _vm.Snapshot.Id;
@@ -38,6 +39,9 @@ public sealed class NoteWindow : Window
     internal Action<NoteWindow>? ConnectionClicked { get; set; }
     internal Action<NoteWindow>? InteractionDeactivated { get; set; }
     internal bool IsConnectionSelected => _linkHandles.IsSelected;
+    internal NoteFormattingToolbar FormattingToolbar => _formatting;
+    internal bool OwnsInteractionWindow(nint handle) => handle != 0 &&
+        (handle == Handle || NativeWindows.RootOwner(handle) == Handle || _formatting.OwnsWindow(handle));
     internal Action? CommitSelection { get; set; }
     internal Action<NoteWindow, ContextMenu>? PopulateBoardMenu { get; set; }
     internal Action<NoteWindow, NoteSide>? LinkDragStarted { get; set; }
@@ -162,11 +166,19 @@ public sealed class NoteWindow : Window
         shell.Children.Add(_frame);
         shell.Children.Add(_connectionFrame);
         _linkHandles = new EdgeLinkHandles(this,
-            side => { FinishTitleEdit(true); Activate(); LinkDragStarted?.Invoke(this, side); },
+            side => { FinishTitleEdit(true); LinkDragStarted?.Invoke(this, side); },
             () => LinkDragUpdated?.Invoke(), () => LinkDragCompleted?.Invoke(), () => CancelInteraction?.Invoke(),
             () => InteractionDeactivated?.Invoke(this));
         shell.Children.Add(_linkHandles);
         Content = shell;
+        _formatting = new NoteFormattingToolbar(this, vm);
+        ApplyTextFormatting();
+        _body.SizeChanged += (_, _) => UpdatePreviewHeight();
+        _viewer.Loaded += (_, _) =>
+        {
+            if (FindScrollViewer(_viewer) is { } scroll) scroll.ScrollChanged += (_, _) => UpdatePreviewHeight();
+            UpdatePreviewHeight();
+        };
         PreviewMouseDown += (_, _) =>
         {
             if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) == 0) CommitSelection?.Invoke();
@@ -205,7 +217,7 @@ public sealed class NoteWindow : Window
         Activated += (_, _) => GeometryChanged?.Invoke();
         Deactivated += (_, _) => { if (_vm.Layer == WindowLayer.Background && !_closing) ApplyLayer(); GeometryChanged?.Invoke(); InteractionDeactivated?.Invoke(this); };
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; vm.Hide.Execute(null); } };
-        Closed += (_, _) => { _linkHandles.Dispose(); vm.PropertyChanged -= OnViewModelChanged; vm.Dispose(); _source?.RemoveHook(WindowMessages); };
+        Closed += (_, _) => { _formatting.Dispose(); _linkHandles.Dispose(); vm.PropertyChanged -= OnViewModelChanged; vm.Dispose(); _source?.RemoveHook(WindowMessages); };
     }
 
     private static Button MakeButton(string text, string tooltip) => new()
@@ -244,14 +256,6 @@ public sealed class NoteWindow : Window
     private void PopulateMenu(ContextMenu menu)
     {
         menu.Items.Clear();
-        var colors = new MenuItem { Header = "Цвет" };
-        string[] names = ["Жёлтый", "Персиковый", "Мятный", "Голубой", "Лавандовый", "Розовый"];
-        foreach (var color in Enum.GetValues<NoteColor>())
-        {
-            var item = new MenuItem { Header = names[(int)color], IsCheckable = true, IsChecked = _vm.Color == color };
-            item.Click += (_, _) => _vm.Color = color; colors.Items.Add(item);
-        }
-        menu.Items.Add(colors);
         var layers = new MenuItem { Header = "Расположение" };
         string[] layerNames = ["Обычный", "Поверх окон", "На задний план"];
         foreach (var layer in Enum.GetValues<WindowLayer>())
@@ -260,9 +264,6 @@ public sealed class NoteWindow : Window
             item.Click += (_, _) => _vm.Layer = layer; layers.Items.Add(item);
         }
         menu.Items.Add(layers);
-        var pin = new MenuItem { Header = "Закрепить на месте", IsCheckable = true, IsChecked = _vm.IsPinned };
-        pin.Click += (_, _) => _vm.IsPinned = !_vm.IsPinned;
-        menu.Items.Add(pin);
         PopulateBoardMenu?.Invoke(this, menu);
         menu.Items.Add(new Separator());
         menu.Items.Add(new MenuItem { Header = "Скрыть", Command = _vm.Hide });
@@ -275,6 +276,9 @@ public sealed class NoteWindow : Window
         {
             case nameof(NoteViewModel.Snapshot): ApplySnapshotBounds(); break;
             case nameof(NoteViewModel.IsPinned): _titleArea.Cursor = _vm.IsPinned ? System.Windows.Input.Cursors.No : System.Windows.Input.Cursors.SizeAll; break;
+            case nameof(NoteViewModel.FontSize): case nameof(NoteViewModel.IsBold):
+            case nameof(NoteViewModel.TextAlignment): case nameof(NoteViewModel.VerticalAlignment):
+                ApplyTextFormatting(); if (_vm.IsPreview) RenderPreview(); break;
             case nameof(NoteViewModel.Title): Title = _vm.Title; break;
             case nameof(NoteViewModel.Markdown): if (_vm.IsPreview) RenderPreview(); break;
             case nameof(NoteViewModel.IsPreview):
@@ -296,8 +300,7 @@ public sealed class NoteWindow : Window
         _updatingLayout = true;
         try
         {
-            string[] palette = ["#FFF1A8", "#FFD9BC", "#CFF0D6", "#D3E9FC", "#E3D9FA", "#FAD8E4"];
-            Background = (Brush)new BrushConverter().ConvertFromString(palette[(int)_vm.Color])!;
+            Background = (Brush)new BrushConverter().ConvertFromString(NoteFormattingToolbar.Palette[(int)_vm.Color])!;
             _body.Visibility = _vm.IsCollapsed ? Visibility.Collapsed : Visibility.Visible;
             MinHeight = _vm.IsCollapsed ? 44 : 140;
             Height = _vm.IsCollapsed ? 44 : _vm.Snapshot.Height;
@@ -314,7 +317,60 @@ public sealed class NoteWindow : Window
         catch (Win32Exception ex) { System.Windows.MessageBox.Show(this, "Не удалось изменить порядок окон: " + ex.Message, "DesktopNotes"); }
     }
 
-    private void RenderPreview() => _viewer.Document = _markdown.Render(_vm.Markdown);
+    private void ApplyTextFormatting()
+    {
+        _editor.FontSize = _vm.FontSize;
+        _editor.FontWeight = _vm.IsBold ? FontWeights.Bold : FontWeights.Normal;
+        _editor.TextAlignment = TextAlignmentFor(_vm.TextAlignment);
+        _editor.VerticalContentAlignment = VerticalAlignmentFor(_vm.VerticalAlignment);
+        _viewer.VerticalAlignment = VerticalAlignmentFor(_vm.VerticalAlignment);
+    }
+
+    internal static TextAlignment TextAlignmentFor(NoteTextAlignment alignment) => alignment switch
+    { NoteTextAlignment.Center => TextAlignment.Center, NoteTextAlignment.Right => TextAlignment.Right,
+        NoteTextAlignment.Justify => TextAlignment.Justify, _ => TextAlignment.Left };
+    private static VerticalAlignment VerticalAlignmentFor(NoteVerticalAlignment alignment) => alignment switch
+    { NoteVerticalAlignment.Center => VerticalAlignment.Center, NoteVerticalAlignment.Bottom => VerticalAlignment.Bottom, _ => VerticalAlignment.Top };
+
+    private void RenderPreview()
+    {
+        _viewer.Document = _markdown.Render(_vm.Markdown);
+        ApplyDocumentFormatting(_viewer.Document, _vm.Snapshot);
+        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, UpdatePreviewHeight);
+    }
+
+    internal static void ApplyDocumentFormatting(System.Windows.Documents.FlowDocument document, Note note)
+    {
+        document.FontSize = note.FontSize;
+        document.FontWeight = note.IsBold ? FontWeights.Bold : FontWeights.Normal;
+        document.TextAlignment = TextAlignmentFor(note.TextAlignment);
+        void Format(System.Windows.Documents.BlockCollection blocks)
+        {
+            foreach (var block in blocks)
+            {
+                if (block.ReadLocalValue(System.Windows.Documents.TextElement.FontSizeProperty) is double size) block.FontSize = size * note.FontSize / 14;
+                if (note.IsBold) block.FontWeight = FontWeights.Bold;
+                if (block is System.Windows.Documents.Section section) Format(section.Blocks);
+                if (block is System.Windows.Documents.List list) foreach (var item in list.ListItems) Format(item.Blocks);
+            }
+        }
+        Format(document.Blocks);
+    }
+
+    private static ScrollViewer? FindScrollViewer(DependencyObject parent)
+    {
+        if (parent is ScrollViewer scroll) return scroll;
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
+            if (FindScrollViewer(VisualTreeHelper.GetChild(parent, i)) is { } found) return found;
+        return null;
+    }
+
+    private void UpdatePreviewHeight()
+    {
+        if (!_vm.IsPreview || _body.ActualHeight <= 0 || FindScrollViewer(_viewer) is not { } scroll || scroll.ExtentHeight <= 0) return;
+        var height = Math.Max(1, Math.Min(_body.ActualHeight, scroll.ExtentHeight));
+        if (double.IsNaN(_viewer.Height) || Math.Abs(_viewer.Height - height) > 0.5) _viewer.Height = height;
+    }
 
     private void ApplySnapshotBounds()
     {
@@ -363,6 +419,7 @@ public sealed class NoteWindow : Window
     {
         _connectionFrame.BorderBrush = selected || targeted ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(74, 164, 255)) : Brushes.Transparent;
         _linkHandles.SetState(selected, targeted);
+        _formatting.SetSelected(selected);
     }
 
     public void SaveBounds()

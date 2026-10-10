@@ -26,6 +26,10 @@ public sealed class NoteViewModel : INotifyPropertyChanged, IDisposable
     public WindowLayer Layer { get => _note.Layer; set => Change(_note with { Layer = value }); }
     public bool IsCollapsed => _note.IsCollapsed;
     public bool IsPinned { get => _note.IsPinned; set => Change(_note with { IsPinned = value }); }
+    public double FontSize { get => _note.FontSize; set => Change(_note with { FontSize = value }); }
+    public bool IsBold { get => _note.IsBold; set => Change(_note with { IsBold = value }); }
+    public NoteTextAlignment TextAlignment { get => _note.TextAlignment; set => Change(_note with { TextAlignment = value }); }
+    public NoteVerticalAlignment VerticalAlignment { get => _note.VerticalAlignment; set => Change(_note with { VerticalAlignment = value }); }
     public bool IsPreview { get => _preview; set { _preview = value; OnChanged(); } }
     public ICommand ToggleCollapsed { get; }
     public ICommand TogglePreview { get; }
@@ -66,6 +70,10 @@ public sealed class NoteViewModel : INotifyPropertyChanged, IDisposable
         if (previous.Color != note.Color) OnChanged(nameof(Color));
         if (previous.Layer != note.Layer) OnChanged(nameof(Layer));
         if (previous.IsPinned != note.IsPinned) OnChanged(nameof(IsPinned));
+        if (previous.FontSize != note.FontSize) OnChanged(nameof(FontSize));
+        if (previous.IsBold != note.IsBold) OnChanged(nameof(IsBold));
+        if (previous.TextAlignment != note.TextAlignment) OnChanged(nameof(TextAlignment));
+        if (previous.VerticalAlignment != note.VerticalAlignment) OnChanged(nameof(VerticalAlignment));
         if (previous.IsCollapsed != note.IsCollapsed) OnChanged(nameof(IsCollapsed));
     }
     public void Dispose() => _service.NoteUpdated -= OnNoteUpdated;

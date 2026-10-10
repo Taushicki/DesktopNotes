@@ -13,12 +13,30 @@ public sealed class StorageTests : IDisposable
     public async Task RoundtripPreservesAllStateAndMarkdown()
     {
         var repository = new JsonNoteRepository(_directory);
-        var note = new Note { Title = "Русский заголовок", Markdown = "# Текст\n\n**Код** `x`", Color = NoteColor.Mint, Layer = WindowLayer.Background, X = -1200, Y = 42, Width = 480, Height = 350, IsCollapsed = true, IsHidden = true };
+        var note = new Note { Title = "Русский заголовок", Markdown = "# Текст\n\n**Код** `x`", Color = NoteColor.Mint, Layer = WindowLayer.Background, X = -1200, Y = 42, Width = 480, Height = 350, IsCollapsed = true, IsHidden = true,
+            FontSize = 24, IsBold = true, TextAlignment = NoteTextAlignment.Justify, VerticalAlignment = NoteVerticalAlignment.Bottom };
         await repository.SaveAsync([note]);
         var loaded = await new JsonNoteRepository(_directory).LoadAsync();
         Assert.Equal(note, Assert.Single(loaded.Notes));
         Assert.Null(loaded.Warning);
     }
+
+    [Fact]
+    public async Task ExistingNotesWithoutFormattingLoadWithDefaults()
+    {
+        Directory.CreateDirectory(_directory);
+        await File.WriteAllTextAsync(Path.Combine(_directory, "notes.json"),
+            "{\"Version\":2,\"Notes\":[{\"Id\":\"22222222-2222-2222-2222-222222222222\",\"Markdown\":\"old\"}],\"Groups\":[],\"Links\":[]}");
+        var note = Assert.Single((await new JsonNoteRepository(_directory).LoadAsync()).Notes);
+        Assert.Equal(14, note.FontSize); Assert.False(note.IsBold);
+        Assert.Equal(NoteTextAlignment.Left, note.TextAlignment); Assert.Equal(NoteVerticalAlignment.Top, note.VerticalAlignment);
+    }
+
+    [Theory]
+    [InlineData(7)]
+    [InlineData(73)]
+    [InlineData(double.NaN)]
+    public void InvalidFontSizesAreRejected(double size) => Assert.Throws<InvalidDataException>(() => new Note { FontSize = size }.Validate());
 
     [Fact]
     public async Task CorruptPrimaryRecoversBackupAndDoesNotReplaceItWithCorruption()

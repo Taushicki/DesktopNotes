@@ -21,6 +21,101 @@ public sealed class WindowsInteractionTests
     private sealed class Layers : IWindowLayerController { public void Apply(nint handle, WindowLayer layer) { } }
 
     [Fact]
+    public Task ToolbarFocusKeepsSelectionAndCommandsWorkUntilAnotherWindowIsSelected() => OnStaThread(() =>
+    {
+        var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
+        using var vm = new NoteViewModel(note, notes, () => { }, () => { });
+        var host = new NoteWindow(vm, new Layers(), new MarkdownRenderer());
+        var external = new Window { ShowInTaskbar = false };
+        using var clicks = new DesktopClickObserver();
+        using var board = new BoardInteractionController(notes, new GroupSelectionSession(notes), clicks, _ => host, Dispatcher.CurrentDispatcher);
+        board.Attach(host);
+        try
+        {
+            host.ConnectionClicked!(host);
+            var toolbar = host.FormattingToolbar;
+            var hwnd = new System.Windows.Interop.WindowInteropHelper(toolbar).EnsureHandle();
+            Assert.True(host.OwnsInteractionWindow(hwnd));
+            board.ReconcileInteractionFocus(host, hwnd);
+            Assert.True(host.IsConnectionSelected);
+            var row = Assert.IsType<StackPanel>(Assert.IsType<Border>(toolbar.Content).Child);
+            Assert.IsType<Button>(row.Children[2]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.IsType<ComboBox>(row.Children[1]).SelectedItem = 20d;
+            Assert.IsType<Button>(row.Children[4]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.True(notes.Get(note.Id).IsBold); Assert.True(notes.Get(note.Id).IsPinned); Assert.Equal(20, notes.Get(note.Id).FontSize);
+            board.ReconcileInteractionFocus(host, hwnd);
+            Assert.True(host.IsConnectionSelected);
+            board.ReconcileInteractionFocus(host, new System.Windows.Interop.WindowInteropHelper(external).EnsureHandle());
+            Assert.False(host.IsConnectionSelected);
+        }
+        finally { host.ClosePermanently(); external.Close(); }
+    });
+
+    [Theory]
+    [InlineData(320, 1)]
+    [InlineData(220, 1)]
+    [InlineData(640, 2)]
+    [InlineData(480, 1.5)]
+    public void ToolbarIsCenteredAtDifferentNoteSizesAndDpi(int noteWidth, double scale)
+    {
+        var note = new ScreenRect { Left = 500, Top = 500, Right = 500 + noteWidth, Bottom = 800 };
+        var bounds = NoteFormattingToolbar.CalculateBounds(note, new ScreenRect { Right = 2000, Bottom = 1200 }, scale);
+        Assert.InRange(Math.Abs((bounds.Left + bounds.Right) / 2.0 - (note.Left + note.Right) / 2.0), 0, 0.5);
+        Assert.True(bounds.Bottom < note.Top);
+    }
+
+    [Fact]
+    public void ToolbarRemainsVisibleAtScreenEdges()
+    {
+        var area = new ScreenRect { Left = -1920, Top = 0, Right = 0, Bottom = 1080 };
+        var bounds = NoteFormattingToolbar.CalculateBounds(new ScreenRect { Left = -220, Top = 0, Right = 0, Bottom = 280 }, area, 1);
+        Assert.True(bounds.Left >= area.Left); Assert.True(bounds.Right <= area.Right);
+        Assert.True(bounds.Top >= 280); Assert.True(bounds.Bottom <= area.Bottom);
+    }
+
+    [Fact]
+    public Task FormattingToolbarChangesNoteSettingsWithoutChangingMarkdown() => OnStaThread(() =>
+    {
+        var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
+        using var vm = new NoteViewModel(note, notes, () => { }, () => { }); vm.Markdown = "# Heading\n\n**bold** text";
+        var host = new NoteWindow(vm, new Layers(), new MarkdownRenderer());
+        using var toolbar = new NoteFormattingToolbar(host, vm);
+        try
+        {
+            var surface = Assert.IsType<Border>(toolbar.Content);
+            var row = Assert.IsType<StackPanel>(surface.Child);
+            Assert.Equal(5, row.Children.Count);
+            Assert.IsType<ComboBox>(row.Children[1]).SelectedItem = 24d;
+            Assert.IsType<Button>(row.Children[2]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.IsType<Button>(row.Children[4]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var saved = notes.Get(note.Id);
+            Assert.Equal(24, saved.FontSize); Assert.True(saved.IsBold); Assert.True(saved.IsPinned);
+            Assert.Equal("# Heading\n\n**bold** text", saved.Markdown);
+            surface.Measure(new Size(272, 56)); surface.Arrange(new Rect(0, 0, 272, 56));
+            var bitmap = new RenderTargetBitmap(272, 56, 96, 96, PixelFormats.Pbgra32); bitmap.Render(surface);
+            if (Environment.GetEnvironmentVariable("DESKTOPNOTES_TEST_RENDER_DIR") is { } directory)
+            {
+                Directory.CreateDirectory(directory); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                using var file = File.Create(Path.Combine(directory, "note-formatting-toolbar.png")); encoder.Save(file);
+            }
+        }
+        finally { host.ClosePermanently(); }
+    });
+
+    [Fact]
+    public Task PreviewFormattingScalesHeadingsCodeAndPreservesInlineMarkdown() => OnStaThread(() =>
+    {
+        var document = new MarkdownRenderer().Render("# Title\n\n**bold** normal\n\n```\ncode\n```");
+        NoteWindow.ApplyDocumentFormatting(document, new Note { FontSize = 28, IsBold = true, TextAlignment = NoteTextAlignment.Center });
+        Assert.Equal(28, document.FontSize); Assert.Equal(TextAlignment.Center, document.TextAlignment);
+        Assert.Equal(52, document.Blocks.FirstBlock.FontSize);
+        Assert.Equal(24, document.Blocks.LastBlock.FontSize);
+        Assert.Equal(FontWeights.Bold, document.FontWeight);
+        Assert.Equal(TextAlignment.Right, NoteWindow.TextAlignmentFor(NoteTextAlignment.Right));
+        Assert.Equal(TextAlignment.Justify, NoteWindow.TextAlignmentFor(NoteTextAlignment.Justify));
+    });
+
+    [Fact]
     public Task ClickingANoteSelectsOnlyItsFourConnectionPortsAndCtrlStillSelectsGroups() => OnStaThread(() =>
     {
         var notes = new NoteService(new Repository());
@@ -79,6 +174,44 @@ public sealed class WindowsInteractionTests
             Assert.Equal(0, handles.VisiblePortCount);
         }
         finally { handles?.Dispose(); host.Close(); }
+    });
+
+    [Fact]
+    public Task DragPreviewMovesItsArrowheadAndDoesNotCreateEndpointWindows() => OnStaThread(() =>
+    {
+        var host = new Window { Left = -10000, Top = -10000, Width = 320, Height = 280, ShowActivated = false, ShowInTaskbar = false };
+        var preview = new ArrowOverlay();
+        try
+        {
+            host.Show();
+            var owner = new System.Windows.Interop.WindowInteropHelper(host).Handle;
+            var start = new DiagramPoint(-9600, -9800);
+            var first = new DiagramPoint(-9500, -9800);
+            var moved = new DiagramPoint(-9400, -9750);
+            preview.Draw([start, first], new LinkStyle(), owner, owner);
+            preview.UpdateLayout();
+            var visual = Assert.IsType<ArrowOverlay.ArrowVisual>(preview.Content);
+            Assert.True(preview.IsVisible);
+            Assert.True(preview.Topmost);
+            Assert.False(preview.IsHitTestVisible);
+            Assert.False(visual.Interactive);
+            Assert.Equal(first, visual.Points[^1]);
+            preview.Draw([start, new(-9500, start.Y), new(-9500, moved.Y), moved], new LinkStyle(), owner, owner);
+            preview.UpdateLayout();
+            Assert.Equal(moved, visual.Points[^1]);
+            Assert.Empty(host.OwnedWindows.Cast<Window>());
+            var tip = new Point((moved.X - visual.PhysicalOrigin.Left) / visual.Scale - 3,
+                (moved.Y - visual.PhysicalOrigin.Top) / visual.Scale);
+            var image = new RenderTargetBitmap((int)Math.Ceiling(visual.ActualWidth), (int)Math.Ceiling(visual.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+            image.Render(visual);
+            var pixels = new byte[image.PixelWidth * image.PixelHeight * 4];
+            image.CopyPixels(pixels, image.PixelWidth * 4, 0);
+            var index = ((int)tip.Y * image.PixelWidth + (int)tip.X) * 4;
+            Assert.InRange(pixels[index], (byte)110, (byte)150); // Grey arrowhead, no white endpoint ring.
+            preview.Hide();
+            Assert.False(preview.IsVisible);
+        }
+        finally { preview.Close(); host.Close(); }
     });
 
     [Fact]

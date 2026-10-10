@@ -94,6 +94,8 @@ internal sealed class EdgeLinkHandles : Grid, IDisposable
         {
             if (!IsSelected || (Keyboard.Modifiers & ModifierKeys.Control) != 0) return;
             e.Handled = true;
+            // Activating another HWND after capture can release it before the drag starts.
+            _host.Activate();
             if (!button.CaptureMouse()) return;
             _dragPort = port;
             visual.IsHovered = false; visual.InvalidateVisual();

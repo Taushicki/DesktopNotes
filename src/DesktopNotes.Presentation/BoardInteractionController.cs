@@ -31,6 +31,7 @@ internal sealed class BoardInteractionController : IDisposable
     private NoteWindow? _linkTarget;
     private ArrowOverlay? _linkPreview;
     private readonly DispatcherTimer _visibilityTimer;
+    private readonly DispatcherTimer _linkDragTimer;
 
     public BoardInteractionController(NoteService notes, GroupSelectionSession selection, DesktopClickObserver clicks,
         Func<Guid, NoteWindow> getWindow, Dispatcher dispatcher)
@@ -45,6 +46,11 @@ internal sealed class BoardInteractionController : IDisposable
         _visibilityTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(200), DispatcherPriority.Background,
             (_, _) => { if (_arrows.Count > 0) RefreshArrows(); }, dispatcher);
         _visibilityTimer.Start();
+        // Capture crosses several native windows; sample the screen cursor even
+        // when the port does not receive a WPF MouseMove event.
+        _linkDragTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render,
+            (_, _) => UpdateLinkPreview(), dispatcher);
+        _linkDragTimer.Stop();
     }
 
     public void Attach(NoteWindow window)
@@ -89,11 +95,18 @@ internal sealed class BoardInteractionController : IDisposable
         RefreshFrames();
     }
 
-    private void OnInteractionDeactivated(NoteWindow window) => _dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
+    private void OnInteractionDeactivated(NoteWindow window) => _dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
     {
-        if (!_disposed && _linkSource is null && _connectionNote == window.NoteId && NativeWindows.ForegroundOwner() != window.Handle)
-            SelectConnectionNote(null);
+        // Let activation of the toolbar/popup finish before deciding that the
+        // user left this note. Separate HWNDs are part of the same interaction.
+        ReconcileInteractionFocus(window, NativeWindows.ForegroundWindow());
     });
+
+    internal void ReconcileInteractionFocus(NoteWindow window, nint foreground)
+    {
+        if (!_disposed && _linkSource is null && _connectionNote == window.NoteId && !window.OwnsInteractionWindow(foreground))
+            SelectConnectionNote(null);
+    }
 
     private void OnDesktopClick() => _dispatcher.BeginInvoke(DispatcherPriority.Send, () =>
     {
@@ -215,6 +228,7 @@ internal sealed class BoardInteractionController : IDisposable
         _linkPreview = new ArrowOverlay();
         Mouse.OverrideCursor = Cursors.Cross;
         UpdateLinkPreview();
+        _linkDragTimer.Start();
     }
 
     private NoteWindow? DropTarget()
@@ -234,6 +248,7 @@ internal sealed class BoardInteractionController : IDisposable
     private void UpdateLinkPreview()
     {
         if (_linkSource is null || _linkPreview is null) return;
+        if (!_linkSource.IsVisible || !NativeWindows.IsShown(_linkSource.Handle)) { CancelLink(); return; }
         _linkTarget = DropTarget();
         var source = NativeWindows.Rect(_linkSource.Handle).Bounds;
         IReadOnlyList<DiagramPoint> points;
@@ -258,6 +273,7 @@ internal sealed class BoardInteractionController : IDisposable
 
     private void CancelLink()
     {
+        _linkDragTimer.Stop();
         _linkPreview?.Close();
         _linkPreview = null;
         _linkSource = null;
@@ -347,6 +363,7 @@ internal sealed class BoardInteractionController : IDisposable
         if (_disposed) return;
         _disposed = true;
         _visibilityTimer.Stop();
+        _linkDragTimer.Stop();
         _linkSelection.Changed -= RefreshArrowSelection;
         _notes.Changed -= ScheduleRefresh;
         _selection.StateChanged -= OnSelectionChanged;

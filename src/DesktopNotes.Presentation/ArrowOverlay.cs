@@ -31,7 +31,8 @@ internal sealed class ArrowOverlay : Window
         IsHitTestVisible = interactive;
         _visual.Interactive = interactive;
         _visual.Focusable = interactive;
-        _visual.ShowEndpoints = !interactive;
+        // A free preview end is an arrowhead, not a selection handle.
+        Topmost = !interactive;
         Content = _visual;
         _interop = new WindowInteropHelper(this);
         SourceInitialized += (_, _) => NativeWindows.MakeOverlay(_interop.Handle, interactive);
@@ -89,7 +90,7 @@ internal sealed class ArrowOverlay : Window
         _visual.LinkStyle = style;
         _visual.PhysicalOrigin = NativeWindows.Rect(_interop.Handle);
         _visual.Scale = NativeWindows.Scale(_interop.Handle);
-        NativeWindows.PutBehind(_interop.Handle, source, target);
+        if (_interactive) NativeWindows.PutBehind(_interop.Handle, source, target);
         UpdateAdornments();
         _visual.InvalidateVisual();
     }
@@ -102,7 +103,7 @@ internal sealed class ArrowOverlay : Window
 
     private void UpdateAdornments()
     {
-        if (!IsVisible || (_interactive && !_visual.IsSelected) || _visual.Points.Count < 2) { HideAdornments(); return; }
+        if (!IsVisible || !_interactive || !_visual.IsSelected || _visual.Points.Count < 2) { HideAdornments(); return; }
         void Place(ref Window? adornment, ref nint previousOwner, nint ownerHandle, DiagramPoint point)
         {
             if (!NativeWindows.IsShown(ownerHandle)) return;
@@ -144,7 +145,6 @@ internal sealed class ArrowOverlay : Window
         public bool Interactive;
         public bool IsHovered;
         public bool IsSelected;
-        public bool ShowEndpoints;
         // Update the old default appearance without overriding explicit custom widths.
         private bool LegacyStandard => LinkStyle.Pattern == LinkLinePattern.Solid && LinkStyle.Route == LinkRoute.Straight &&
             ((LinkStyle.Width == 1.5 && LinkStyle.Color == "#64748B") || (LinkStyle.Width == 2.2 && LinkStyle.Color == "#475569"));
@@ -232,7 +232,7 @@ internal sealed class ArrowOverlay : Window
             if (IsHovered) dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(30, 74, 164, 255)), width + 4), geometry);
             dc.DrawGeometry(null, pen, geometry);
             dc.DrawGeometry(brush, null, head);
-            if (IsSelected || ShowEndpoints)
+            if (IsSelected)
             {
                 var blue = new Pen(new SolidColorBrush(Color.FromRgb(74, 164, 255)), 1.8);
                 dc.DrawEllipse(Brushes.White, blue, Local(Points[0]), 6, 6);

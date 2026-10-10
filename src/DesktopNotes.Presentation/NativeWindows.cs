@@ -46,6 +46,8 @@ internal static class NativeWindows
     public static ScreenRect Rect(nint window) { GetWindowRect(window, out var rectangle); return rectangle; }
     public static (int X, int Y) Cursor() { GetCursorPos(out var point); return (point.X, point.Y); }
     public static nint ForegroundOwner() => GetAncestor(GetForegroundWindow(), 3);
+    public static nint ForegroundWindow() => GetForegroundWindow();
+    public static nint RootOwner(nint window) => GetAncestor(window, 3);
     public static nint RootOwnerUnderCursor() { GetCursorPos(out var point); return GetAncestor(WindowFromPoint(point), 3); }
     public static bool IsDesktopSurface(nint window)
     {
