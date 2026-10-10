@@ -36,7 +36,7 @@ public sealed class LiveEditorTests
             Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.Shift));
             editor.Document.Insert(editor.CaretOffset, "продолжение"); host.UpdateLayout();
             Capture("compact-note-source.png");
-            var expected = source + "\nпродолжение";
+            var expected = source + "\n  продолжение";
             Assert.Equal(expected, editor.Text);
             Keyboard.Focus(otherControl); host.UpdateLayout();
             Assert.False(editor.IsKeyboardFocusWithin);
@@ -67,17 +67,25 @@ public sealed class LiveEditorTests
     [InlineData("| first | second |")]
     [InlineData("```\n  code")]
     [InlineData("first\r\n- item")]
-    public Task ShiftEnterInsertsOnlyNewlineInEveryContext(string source) => OnSta(() =>
+    public Task ShiftEnterContinuesListsWithoutAddingAnotherMarker(string source) => OnSta(() =>
     {
         using var editor = new LiveMarkdownEditor() { Text = source };
         editor.Select(source.Length, 0);
         var newline = source.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var prefix = source.Split('\n').Last() switch
+        {
+            "- item" or "- " => "  ",
+            "1. item" => "   ",
+            "  - nested" => "    ",
+            "- [ ] task" or "- [x] task" => "      ",
+            _ => ""
+        };
         Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.Shift));
-        Assert.Equal(source + newline, editor.Text);
+        Assert.Equal(source + newline + prefix, editor.Text);
         Assert.Equal(editor.Text.Length, editor.CaretOffset);
         Assert.Equal(0, editor.SelectionLength);
         editor.Undo(); Assert.Equal(source, editor.Text);
-        editor.Redo(); Assert.Equal(source + newline, editor.Text);
+        editor.Redo(); Assert.Equal(source + newline + prefix, editor.Text);
     });
 
     [Fact]
@@ -86,7 +94,7 @@ public sealed class LiveEditorTests
         using var editor = new LiveMarkdownEditor() { Text = "- first second" };
         editor.Select(7, 7);
         Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.Shift));
-        Assert.Equal("- first\n", editor.Text); Assert.Equal(8, editor.CaretOffset);
+        Assert.Equal("- first\n  ", editor.Text); Assert.Equal(10, editor.CaretOffset);
         editor.Undo(); Assert.Equal("- first second", editor.Text);
         foreach (var (source, expected) in new[] { ("- item", "- item\n- "), ("1. item", "1. item\n2. "), ("- [x] task", "- [x] task\n- [ ] "), ("> quote", "> quote\n> ") })
         {

@@ -273,13 +273,49 @@ public sealed class InlineMarkdownEditorTests
             host.Show(); editor.Select(editor.Text.Length, 0);
             editor.HandleShortcut(Key.Enter, ModifierKeys.None);
             editor.HandleShortcut(Key.Enter, ModifierKeys.None); host.UpdateLayout();
-            Assert.Equal(original + newline + newline, editor.Text);
+            Assert.Equal(original + newline, editor.Text);
             editor.Document.Insert(editor.CaretOffset, "plain text"); host.UpdateLayout();
             var offset = editor.Text.LastIndexOf("plain text", StringComparison.Ordinal);
             Assert.DoesNotContain(editor.Layout.Decorations, part => part.Start == offset && part.Kind == InlineMarkdownLayout.DecorationKind.Indent);
             editor.Undo(); editor.Undo(); Assert.EndsWith(newline + (item.StartsWith("2.") ? "3. " : item.StartsWith("- [") ? "- [ ] " : "- "), editor.Text);
         }
         finally { host.Close(); }
+    });
+
+    [Theory]
+    [InlineData("- ")]
+    [InlineData("1. ")]
+    [InlineData("- [ ] ")]
+    public Task CreatingListAbovePlainTextDoesNotIndentIt(string marker) => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = "first\nordinary text" };
+        var host = Host(editor);
+        try
+        {
+            host.Show(); editor.Document.Insert(0, marker); host.UpdateLayout();
+            var offset = editor.Text.IndexOf("ordinary text", StringComparison.Ordinal);
+            Assert.DoesNotContain(editor.Layout.Decorations, part => part.Start == offset && part.Kind == InlineMarkdownLayout.DecorationKind.Indent);
+            editor.Select(offset, 0); host.UpdateLayout();
+            Assert.Equal(0, editor.TextArea.TextView.GetVisualPosition(editor.TextArea.Caret.Position, VisualYPosition.LineTop).X, 1);
+            editor.HandleShortcut(Key.Enter, ModifierKeys.Shift);
+            Assert.Equal(marker + "first\n\nordinary text", editor.Text);
+            editor.Undo(); Assert.Equal(marker + "first\nordinary text", editor.Text);
+        }
+        finally { host.Close(); }
+    });
+
+    [Fact]
+    public Task ExplicitContinuationSurvivesReloadAndAnotherShiftEnter() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = "- item" };
+        editor.Select(editor.Text.Length, 0); editor.HandleShortcut(Key.Enter, ModifierKeys.Shift);
+        editor.Document.Insert(editor.CaretOffset, "continuation");
+        editor.Select(editor.Text.Length, 0); editor.HandleShortcut(Key.Enter, ModifierKeys.Shift);
+        editor.Document.Insert(editor.CaretOffset, "more");
+        Assert.Equal("- item\n  continuation\n  more", editor.Text);
+        using var reloaded = new LiveMarkdownEditor { Text = editor.Text };
+        foreach (var offset in new[] { 7, 22 })
+            Assert.Contains(reloaded.Layout.Decorations, part => part.Start == offset && part.Kind == InlineMarkdownLayout.DecorationKind.Indent);
     });
 
     private static Window Host(object content) => new() { Content = content, Left = -10000, Top = -10000, Width = 320, Height = 500, ShowActivated = false, ShowInTaskbar = false };

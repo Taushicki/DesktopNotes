@@ -22,7 +22,7 @@ internal sealed class InlineMarkdownLayout
     internal List<CodeFrame> CodeFrames { get; } = [];
     private readonly List<(int Start, int End)> _code = [];
     private readonly List<(int Start, int End)> _tables = [];
-    private readonly List<(int Start, int End, double Indent)> _items = [];
+    private readonly List<(int Start, int End, double Indent, int ContentIndent)> _items = [];
 
     internal static InlineMarkdownLayout Create(string source, MarkdownDocument document)
     {
@@ -89,7 +89,7 @@ internal sealed class InlineMarkdownLayout
                 var lineStart = source.LastIndexOf('\n', Math.Clamp(item.Span.Start - 1, 0, Math.Max(0, source.Length - 1))) + 1;
                 var lineEnd = source.IndexOf('\n', lineStart); if (lineEnd < 0) lineEnd = source.Length;
                 var prefix = ListPrefix.Match(source[lineStart..lineEnd]);
-                if (prefix.Success) _items.Add((lineStart, item.Span.End, prefix.Groups["indent"].Length * 8 + 16));
+                if (prefix.Success) _items.Add((lineStart, item.Span.End, prefix.Groups["indent"].Length * 8 + 16, prefix.Length));
             }
             if (block is LeafBlock leaf && leaf.Inline is not null) VisitInlines(leaf.Inline, source);
             if (block is ContainerBlock container) VisitBlocks(container, source);
@@ -130,11 +130,24 @@ internal sealed class InlineMarkdownLayout
                 ? _items.Where(item => previous >= item.Start && previous <= item.End)
                     .OrderByDescending(item => item.Start).FirstOrDefault()
                 : default;
-        if (parent.Indent > 0)
-        {
-            var spaces = text.Length - text.TrimStart(' ', '\t').Length;
+        var spaces = text.Length - text.TrimStart(' ', '\t').Length;
+        // Only explicitly indented source belongs to a continuation. Markdig's
+        // lazy continuation rule must not move an ordinary following line.
+        if (parent.Indent > 0 && spaces >= parent.ContentIndent)
             Decorations.Add(new(offset, spaces, DecorationKind.Indent, Indent: parent.Indent));
-        }
+    }
+
+    internal string ListContinuationPrefix(string source, int offset)
+    {
+        var start = offset == 0 ? 0 : source.LastIndexOf('\n', offset - 1) + 1;
+        var end = source.IndexOf('\n', start); if (end < 0) end = source.Length;
+        var line = source[start..end];
+        var marker = ListPrefix.Match(line);
+        if (marker.Success && Decorations.Any(part => part.Start == start && part.Kind is DecorationKind.Bullet or DecorationKind.Number or DecorationKind.Task))
+            return new string(' ', marker.Length);
+        if (Decorations.Any(part => part.Start == start && part.Kind == DecorationKind.Indent))
+            return line[..(line.Length - line.TrimStart(' ', '\t').Length)];
+        return "";
     }
 
     private void Hide(int start, int length)

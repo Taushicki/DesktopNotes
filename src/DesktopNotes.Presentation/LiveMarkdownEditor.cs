@@ -313,10 +313,11 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         if (key == Key.Back && modifiers == ModifierKeys.None && SelectionLength == 0 && TryUnwrapCodeBlock()) return true;
         if (key == Key.Enter && modifiers == ModifierKeys.Shift)
         {
-            // Handle this before AvalonEdit's indentation strategy: Shift+Enter
-            // inserts only a newline, regardless of the surrounding Markdown.
+            // A list continuation is explicit in the source; ordinary following
+            // text stays unindented, even without an intervening blank line.
             var newline = Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
-            ApplyEdit(new(SelectionStart, SelectionLength, newline, newline.Length, 0));
+            var replacement = newline + Layout.ListContinuationPrefix(Text, SelectionStart);
+            ApplyEdit(new(SelectionStart, SelectionLength, replacement, replacement.Length, 0));
             return true;
         }
         if ((modifiers is ModifierKeys.Control or (ModifierKeys.Control | ModifierKeys.Shift)) && key is Key.Left or Key.Right)
