@@ -289,6 +289,41 @@ public sealed class CodeBlockEditorTests
         finally { host.Close(); }
     });
 
+    [Theory]
+    [InlineData("\n", "```")]
+    [InlineData("\r\n", "~~~")]
+    public Task NewFenceAboveExistingCodeDoesNotConsumeItsOpening(string newline, string fence) => OnSta(() =>
+    {
+        var prefix = $"# Название{newline}{newline}";
+        var originalBlock = $"{fence}{newline}Исходный код{newline}{fence}";
+        var source = prefix + newline + originalBlock;
+        using var editor = new LiveMarkdownEditor { Text = source };
+        editor.EnableNoteTitle(); editor.Select(prefix.Length, 0);
+        var host = new Window { Content = editor, Width = 330, Height = 300, Left = -10000, Top = -10000, ShowActivated = false, ShowInTaskbar = false };
+        try
+        {
+            host.Show(); host.UpdateLayout();
+            foreach (var c in fence) editor.TextArea.PerformTextInput(c.ToString());
+            host.UpdateLayout();
+            Assert.Equal(prefix + fence + newline + fence + newline + originalBlock, editor.Text);
+            Assert.Equal(2, editor.Layout.CodeFrames.Count);
+            var renderer = Assert.Single(editor.TextArea.TextView.BackgroundRenderers.OfType<CodeBlockBackground>());
+            Assert.Null(renderer.Bounds(editor.TextArea.TextView, editor.Layout.CodeFrames[0]));
+            Assert.NotNull(renderer.Bounds(editor.TextArea.TextView, editor.Layout.CodeFrames[1]));
+            Assert.Equal(prefix.Length + fence.Length, editor.CaretOffset);
+            Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.None));
+            editor.TextArea.PerformTextInput("Новый код"); host.UpdateLayout();
+            Assert.Equal(prefix + fence + newline + "Новый код" + newline + fence + newline + originalBlock, editor.Text);
+            Assert.Equal(2, editor.Layout.CodeFrames.Count);
+            Assert.All(editor.Layout.CodeFrames, frame => Assert.True(frame.HasClosingFence));
+            var undoStates = new List<string>();
+            for (var i = 0; i < 5 && editor.Text != source; i++) { editor.Undo(); undoStates.Add(editor.Text.Replace("\n", "\\n", StringComparison.Ordinal)); }
+            Assert.True(editor.Text == source, string.Join(" | ", undoStates));
+            Assert.Single(editor.Layout.CodeFrames);
+        }
+        finally { host.Close(); }
+    });
+
     private static Task OnSta(Action action)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

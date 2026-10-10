@@ -68,6 +68,8 @@ internal sealed class InlineMarkdownLayout
                         if (closing >= contentStart && closing < end)
                         {
                             closingStart = closing;
+                            if (closing == contentStart)
+                                Decorations.RemoveAll(part => part.Start == first && part.Kind == DecorationKind.Hidden);
                             // Markdig's span ends at the closing fence, excluding its newline.
                             var closingEnd = source.IndexOf('\n', closing); if (closingEnd < 0) closingEnd = source.Length;
                             var closingLength = source[closing..closingEnd].TrimEnd('\r').Length;

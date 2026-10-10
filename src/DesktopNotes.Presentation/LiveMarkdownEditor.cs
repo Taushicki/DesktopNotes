@@ -60,6 +60,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.PreviewMouseLeftButtonDown += OnEditorMouseDown;
         TextArea.Caret.PositionChanged += OnFenceCaretChanged;
         TextArea.SelectionChanged += OnFenceCaretChanged;
+        TextArea.TextEntering += OnFenceTextEntering;
         _search = SearchPanel.Install(this); _search.Localization = new RussianSearch();
         System.Windows.Automation.AutomationProperties.SetName(this, "Текст заметки — Markdown Live Preview");
     }
@@ -68,6 +69,23 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     {
         NormalizeTitle();
         RefreshPreview();
+    }
+
+    private void OnFenceTextEntering(object sender, TextCompositionEventArgs e)
+    {
+        if (SelectionLength != 0 || e.Text.Contains('\n')) return;
+        var line = Document.GetLineByOffset(CaretOffset);
+        if (CaretOffset != line.EndOffset || Layout.CodeFrames.Any(frame => CaretOffset >= frame.Start && CaretOffset < frame.End)) return;
+        if (!Layout.CodeFrames.Any(frame => frame.HasClosingFence && frame.Start > CaretOffset)) return;
+        var original = Document.GetText(line);
+        if (Regex.IsMatch(original, @"^ {0,3}(?:`{3,}|~{3,})")) return;
+        var match = Regex.Match(original + e.Text, @"^(?<indent> {0,3})(?<fence>`{3,}|~{3,})(?<info>[^\r\n]*)$");
+        if (!match.Success || match.Groups["fence"].Value[0] == '`' && match.Groups["info"].Value.Contains('`')) return;
+        var newline = Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        // Insert both fences in the same edit: the next block's opening cannot
+        // become this one's closing, and Undo removes the automatic fence too.
+        ApplyEdit(new(CaretOffset, 0, e.Text + newline + match.Groups["indent"].Value + match.Groups["fence"].Value, e.Text.Length, 0));
+        e.Handled = true;
     }
     internal void EnableNoteTitle()
     {
@@ -139,7 +157,14 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             var closingLine = frame.ClosingStart is { } closing ? Document.GetLineByOffset(closing) : null;
             if (line != openingLine && line != closingLine) continue;
             if (line == openingLine && !Layout.Decorations.Any(part => part.Start == frame.Start && part.Kind == InlineMarkdownLayout.DecorationKind.Hidden)) continue;
-            if (frame.ClosingStart == start) continue; // A source-only, two-fence block has no body row yet.
+            if (frame.ClosingStart == start)
+            {
+                if (line == openingLine) continue;
+                _redirectingFenceCaret = true;
+                try { Select(openingLine.EndOffset, 0); }
+                finally { _redirectingFenceCaret = false; }
+                return;
+            }
             var target = line == openingLine ? start : Document.GetLineByOffset(frame.ClosingStart!.Value - 1).EndOffset;
             _redirectingFenceCaret = true;
             try { Select(target, 0); }
@@ -363,11 +388,17 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     private bool TryCreateFencedCodeBlock()
     {
         var line = Document.GetLineByOffset(CaretOffset);
-        if (CaretOffset != line.EndOffset || !Layout.CodeFrames.Any(frame => frame.Start == line.Offset && !frame.HasClosingFence)) return false;
+        var frame = Layout.CodeFrames.FirstOrDefault(frame => frame.Start == line.Offset);
+        if (CaretOffset != line.EndOffset || frame is null || frame.HasClosingFence && frame.ContentStart != frame.ClosingStart) return false;
         var match = Regex.Match(Document.GetText(line), @"^(?<indent> {0,3})(?<fence>`{3,}|~{3,})(?<info>[^\r\n]*)$");
         if (!match.Success) return false;
         var newline = Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         var indent = match.Groups["indent"].Value;
+        if (frame.HasClosingFence)
+        {
+            ApplyEdit(new(CaretOffset, 0, newline + indent, newline.Length + indent.Length, 0));
+            return true;
+        }
         ApplyEdit(new(CaretOffset, 0, newline + indent + newline + indent + match.Groups["fence"].Value, newline.Length + indent.Length, 0));
         return true;
     }
@@ -599,6 +630,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.PreviewMouseLeftButtonDown -= OnEditorMouseDown;
         TextArea.Caret.PositionChanged -= OnFenceCaretChanged;
         TextArea.SelectionChanged -= OnFenceCaretChanged;
+        TextArea.TextEntering -= OnFenceTextEntering;
         PreviewTextInput -= OnTextInput; _search.Uninstall();
     }
 

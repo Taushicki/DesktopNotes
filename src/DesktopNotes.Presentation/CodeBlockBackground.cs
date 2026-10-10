@@ -24,6 +24,7 @@ internal sealed class CodeBlockBackground(LiveMarkdownEditor editor) : IBackgrou
     internal Rect? Bounds(TextView textView, InlineMarkdownLayout.CodeFrame frame)
     {
         if (!frame.HasClosingFence && frame.ContentStart >= frame.End) return null;
+        if (frame.ContentStart == frame.ClosingStart) return null;
         if (!textView.VisualLines.Any(line => line.FirstDocumentLine.Offset < frame.End && line.LastDocumentLine.EndOffset >= frame.Start)) return null;
         var start = frame.ContentStart ?? frame.Start;
         var end = frame.ClosingStart ?? frame.End;
