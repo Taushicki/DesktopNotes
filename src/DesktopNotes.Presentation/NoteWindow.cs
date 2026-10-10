@@ -56,6 +56,7 @@ public sealed class NoteWindow : Window
     public NoteWindow(NoteViewModel vm, IWindowLayerController layers)
     {
         _vm = vm; _layers = layers;
+        Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/DesktopNotes;component/ToolbarStyles.xaml", UriKind.Relative) });
         DataContext = vm;
         Title = vm.Title;
         ShowInTaskbar = false;
@@ -98,7 +99,13 @@ public sealed class NoteWindow : Window
             finally { EndDrag?.Invoke(this); }
         };
         header.Children.Add(_titleArea);
-        var collapse = MakeButton("−", "Свернуть / развернуть"); collapse.Command = vm.ToggleCollapsed;
+        var collapse = MakeButton("Свернуть / развернуть");
+        collapse.Content = new System.Windows.Shapes.Rectangle
+        {
+            Width = 10, Height = 1.5, Fill = Brushes.DarkSlateGray,
+            HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
+        };
+        collapse.Command = vm.ToggleCollapsed;
         collapse.VerticalAlignment = VerticalAlignment.Top;
         collapse.Height = 28;
         collapse.Width = 28;
@@ -190,9 +197,14 @@ public sealed class NoteWindow : Window
         Closed += (_, _) => { _editor.Dispose(); _formatting.Dispose(); _linkHandles.Dispose(); vm.PropertyChanged -= OnViewModelChanged; vm.Dispose(); _source?.RemoveHook(WindowMessages); };
     }
 
-    private static Button MakeButton(string text, string accessibleName)
+    private Button MakeButton(string accessibleName)
     {
-        var button = new Button { Content = text, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(8, 3, 8, 3), MinWidth = 28, Focusable = false };
+        var button = new Button
+        {
+            Style = (Style)Resources["ToolbarButton"], Background = (Brush)Resources["ToolbarSelectedBrush"],
+            BorderThickness = new Thickness(0), MinWidth = 28, Focusable = false,
+            UseLayoutRounding = true, SnapsToDevicePixels = true
+        };
         AutomationProperties.SetName(button, accessibleName);
         return button;
     }
