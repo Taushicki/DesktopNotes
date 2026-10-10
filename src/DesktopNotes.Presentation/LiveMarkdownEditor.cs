@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
@@ -18,12 +17,11 @@ namespace DesktopNotes.Presentation;
 
 internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 {
-    private readonly IMarkdownRenderer _renderer;
     private readonly MarkdownPipeline _pipeline = MarkdownPipelines.Create();
     private Note _appearance = new();
     private List<PreviewBlock> _blocks = [];
     private string _parsedText = "";
-    private readonly List<CollapsedLineSection> _collapsed = [];
+    internal InlineMarkdownLayout Layout { get; private set; } = new();
     private bool _disposed;
     private bool _previewDisabled;
     internal sealed record PreviewBlock(int Start, int Length, bool IsCode = false, bool IsTable = false);
@@ -31,28 +29,27 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     internal event Action<string>? OpenNoteRequested;
     internal event Action<Uri>? OpenWebLinkRequested;
     internal event Action? ContentGeometryChanged;
-    private readonly PreviewGenerator _generator;
+    private readonly InlineGenerator _generator;
     private readonly SearchPanel _search;
 
-    internal LiveMarkdownEditor(IMarkdownRenderer renderer)
+    internal LiveMarkdownEditor()
     {
-        _renderer = renderer;
         Background = Brushes.Transparent; BorderThickness = new Thickness(0); Padding = new Thickness(4);
         FontFamily = new FontFamily("Segoe UI"); FontSize = 14;
         WordWrap = true; ShowLineNumbers = false;
         VerticalScrollBarVisibility = ScrollBarVisibility.Hidden; HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         Options.CutCopyWholeLine = true; Options.ConvertTabsToSpaces = true; Options.IndentationSize = 2;
+        Options.InheritWordWrapIndentation = true;
         Options.EnableHyperlinks = false; Options.EnableEmailHyperlinks = false;
-        _generator = new PreviewGenerator(this); TextArea.TextView.ElementGenerators.Add(_generator);
-        TextArea.TextView.LineTransformers.Add(new ActiveLineStyling());
+        TextArea.TextView.ElementGenerators.Add(new AlignmentGenerator(this));
+        _generator = new InlineGenerator(this); TextArea.TextView.ElementGenerators.Add(_generator);
+        TextArea.TextView.LineTransformers.Add(new InlineStyling(this));
         TextChanged += OnTextChanged;
-        TextArea.Caret.PositionChanged += OnCaretChanged;
-        TextArea.SelectionChanged += OnCaretChanged;
-        GotKeyboardFocus += OnFocusChanged; LostKeyboardFocus += OnFocusChanged;
         SizeChanged += (_, _) => TextArea.TextView.Redraw();
         TextArea.TextView.VisualLinesChanged += (_, _) => ContentGeometryChanged?.Invoke();
         PreviewKeyDown += OnKey;
         PreviewTextInput += OnTextInput;
+        TextArea.PreviewMouseLeftButtonDown += OnEditorMouseDown;
         _search = SearchPanel.Install(this); _search.Localization = new RussianSearch();
         System.Windows.Automation.AutomationProperties.SetName(this, "Текст заметки — Markdown Live Preview");
     }
@@ -64,29 +61,22 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     private void RefreshPreview()
     {
         if (_disposed) return;
-        if (_previewDisabled) { ClearCollapsedLines(); _blocks.Clear(); TextArea.TextView.Redraw(); return; }
-        // Caret/selection events can precede TextChanged during Undo or a replacement.
-        // Never reuse source ranges from the previous document in that interval.
+        if (_previewDisabled) { Layout = new(); _blocks.Clear(); TextArea.TextView.Redraw(); return; }
+        // Parse only when the document changes. Focus and caret movements must never
+        // rebuild the text into a different layout.
         if (_parsedText != Text)
         {
             _parsedText = Text;
             var parsed = Markdig.Markdown.Parse(_parsedText, _pipeline);
+            Layout = InlineMarkdownLayout.Create(_parsedText, parsed);
             _blocks = parsed.Where(block => block.Span.Start >= 0 && block.Span.Length > 0 && block.Span.End < _parsedText.Length)
                 .Select(block =>
                 {
-                    // Markdig may include the final line delimiter in a list's span.
-                    // AvalonEdit uses the exclusive end to find the last visual line:
-                    // consuming that delimiter would also consume the next, uncollapsed line.
+                    // Keep navigation ranges inside actual content, excluding trailing delimiters.
                     var end = block.Span.End + 1;
                     while (end > block.Span.Start && _parsedText[end - 1] is '\r' or '\n') end--;
                     return new PreviewBlock(block.Span.Start, end - block.Span.Start, block is Markdig.Syntax.CodeBlock, block is Markdig.Extensions.Tables.Table);
                 }).Where(block => block.Length > 0).ToList();
-        }
-        ClearCollapsedLines();
-        foreach (var block in _blocks.Where(block => !IsSourceVisible(block)))
-        {
-            var first = Document.GetLineByOffset(block.Start); var last = Document.GetLineByOffset(block.Start + block.Length - 1);
-            if (first.LineNumber < last.LineNumber) _collapsed.Add(TextArea.TextView.CollapseLines(first.NextLine, last));
         }
         TextArea.TextView.Redraw();
     }
@@ -96,18 +86,39 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         RefreshPreview();
     }
 
-    private void ClearCollapsedLines()
+    private void OnEditorMouseDown(object sender, MouseButtonEventArgs e)
     {
-        foreach (var section in _collapsed) section.Uncollapse();
-        _collapsed.Clear();
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+        if (HandleInteractiveClick(e)) e.Handled = true;
     }
-    private void OnCaretChanged(object? sender, EventArgs args) => RefreshPreview();
-    private void OnFocusChanged(object sender, KeyboardFocusChangedEventArgs args) => RefreshPreview();
-    internal bool IsSourceVisible(PreviewBlock block)
+    internal bool HandleInteractiveClick(MouseButtonEventArgs e)
     {
-        if (!IsKeyboardFocusWithin) return false;
-        var end = block.Start + block.Length;
-        return SelectionLength > 0 ? SelectionStart <= end && SelectionStart + SelectionLength >= block.Start : CaretOffset >= block.Start && CaretOffset <= end;
+        if (TryToggleTask(e.GetPosition(this))) return true;
+        var position = GetPositionFromPoint(e.GetPosition(this));
+        if (position is null) return false;
+        CaretOffset = Document.GetOffset(position.Value.Location);
+        return OpenLinkAtCaret();
+    }
+    internal bool TryToggleTask(Point point)
+    {
+        var position = GetPositionFromPoint(point);
+        if (position is null) return false;
+        var line = TextArea.TextView.GetOrConstructVisualLine(Document.GetLineByNumber(position.Value.Line));
+        var marker = line.Elements.OfType<MarkdownDecorationElement>().FirstOrDefault(element => element.Decoration.Kind == InlineMarkdownLayout.DecorationKind.Task);
+        if (marker is null) return false;
+        var x = TranslatePoint(point, TextArea.TextView).X + TextArea.TextView.ScrollOffset.X;
+        var textLine = line.GetTextLine(marker.VisualColumn);
+        var left = textLine.GetDistanceFromCharacterHit(new System.Windows.Media.TextFormatting.CharacterHit(marker.VisualColumn, 0));
+        var right = textLine.GetDistanceFromCharacterHit(new System.Windows.Media.TextFormatting.CharacterHit(marker.VisualColumn + 1, 0));
+        if (x < left || x >= right) return false;
+        ToggleTask(marker.Decoration); return true;
+    }
+    private void ToggleTask(InlineMarkdownLayout.Decoration part)
+    {
+        var marker = Text.IndexOf('[', part.Start, part.Length);
+        if (marker < 0) return;
+        using (Document.RunUpdate()) Document.Replace(marker + 1, 1, Text[marker + 1] == ' ' ? "x" : " ");
+        TextArea.Focus();
     }
 
     internal void SetAppearance(Note note)
@@ -179,6 +190,17 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             if (Text.Substring(CaretOffset - 1, 2) is "()" or "[]" or "{}" or "\"\"" or "''")
             { ApplyEdit(new(CaretOffset - 1, 2, "", 0, 0)); return true; }
         }
+        if (key is Key.Back or Key.Home && modifiers == ModifierKeys.None && SelectionLength == 0)
+        {
+            var line = Document.GetLineByOffset(CaretOffset);
+            var marker = Layout.Decorations.FirstOrDefault(part => part.Start == line.Offset && part.Length > 0 &&
+                part.Kind is InlineMarkdownLayout.DecorationKind.Bullet or InlineMarkdownLayout.DecorationKind.Number or InlineMarkdownLayout.DecorationKind.Task or InlineMarkdownLayout.DecorationKind.Quote);
+            if (marker is not null)
+            {
+                if (key == Key.Home && CaretOffset != marker.Start + marker.Length) { Select(marker.Start + marker.Length, 0); return true; }
+                if (key == Key.Back && CaretOffset == marker.Start + marker.Length) { ApplyEdit(new(marker.Start, marker.Length, "", 0, 0)); return true; }
+            }
+        }
         if (modifiers == ModifierKeys.Control)
         {
             var marker = key switch { Key.B => "**", Key.I => "*", Key.Oem3 => "`", _ => null };
@@ -213,7 +235,13 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         { ApplyEdit(MarkdownEditingCommands.ContinueLine(Text, CaretOffset)); return true; }
         if (key == Key.Tab && modifiers is ModifierKeys.None or ModifierKeys.Shift)
         {
-            if (!MoveTableCell(modifiers == ModifierKeys.Shift)) ApplyEdit(MarkdownEditingCommands.Indent(Text, SelectionStart, SelectionLength, modifiers == ModifierKeys.Shift));
+            if (!MoveTableCell(modifiers == ModifierKeys.Shift))
+            {
+                var line = Document.GetLineByOffset(CaretOffset);
+                var list = Layout.Decorations.Any(part => part.Start == line.Offset && part.Kind is InlineMarkdownLayout.DecorationKind.Bullet or InlineMarkdownLayout.DecorationKind.Number or InlineMarkdownLayout.DecorationKind.Task);
+                ApplyEdit(list ? MarkdownEditingCommands.IndentLines(Text, SelectionStart, SelectionLength, modifiers == ModifierKeys.Shift) :
+                    MarkdownEditingCommands.Indent(Text, SelectionStart, SelectionLength, modifiers == ModifierKeys.Shift));
+            }
             return true;
         }
         return false;
@@ -297,39 +325,6 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         menu.Items.Add(formatting);
     }
 
-    private FrameworkElement CreatePreview(PreviewBlock block)
-    {
-        var source = Text.Substring(block.Start, block.Length);
-        var document = _renderer.Render(source, new MarkdownRenderActions((offset, value) =>
-        {
-            var marker = source.IndexOf('[', Math.Clamp(offset, 0, source.Length - 1));
-            if (marker >= 0 && marker + 2 < source.Length && source[marker + 2] == ']')
-            { using (Document.RunUpdate()) Document.Replace(block.Start + marker + 1, 1, value ? "x" : " "); }
-        }, destination => OpenNoteRequested?.Invoke(destination)));
-        NoteWindow.ApplyDocumentFormatting(document, _appearance); document.PagePadding = new Thickness(0);
-        var view = new RichTextBox { Document = document, IsReadOnly = true, IsDocumentEnabled = true, Focusable = false,
-            Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0), Cursor = Cursors.IBeam,
-            Width = Math.Max(40, TextArea.TextView.ActualWidth - 4), VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, ContextMenu = ContextMenu };
-        view.PreviewMouseLeftButtonDown += (_, e) =>
-        {
-            if (IsInteractivePreviewElement(e.OriginalSource as DependencyObject)) return;
-            e.Handled = true;
-            var pointer = view.GetPositionFromPoint(e.GetPosition(view), true);
-            var plain = pointer is null ? "" : new TextRange(document.ContentStart, pointer).Text;
-            var position = 0;
-            foreach (var character in plain)
-            {
-                if (char.IsWhiteSpace(character)) continue;
-                var found = source.IndexOf(character, position); if (found < 0) break; position = found + 1;
-            }
-            Focus(); CaretOffset = Math.Clamp(block.Start + position, block.Start, block.Start + block.Length);
-            TextArea.TextView.Redraw();
-        };
-        view.Measure(new Size(view.Width, double.PositiveInfinity)); view.Height = Math.Max(FontSize * 1.4, view.DesiredSize.Height);
-        return view;
-    }
-
     internal static bool IsInteractivePreviewElement(DependencyObject? current)
     {
         while (current is not null)
@@ -340,42 +335,123 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         }
         return false;
     }
-    private sealed class PreviewGenerator(LiveMarkdownEditor editor) : VisualLineElementGenerator
+    private sealed class InlineGenerator(LiveMarkdownEditor editor) : VisualLineElementGenerator
     {
-        public override int GetFirstInterestedOffset(int startOffset) => editor._blocks.FirstOrDefault(block => block.Start >= startOffset && !editor.IsSourceVisible(block))?.Start ?? -1;
+        public override int GetFirstInterestedOffset(int startOffset) => editor.Layout.Decorations.FirstOrDefault(part => part.Start >= startOffset)?.Start ?? -1;
         public override VisualLineElement? ConstructElement(int offset)
         {
-            var block = editor._blocks.FirstOrDefault(block => block.Start == offset && !editor.IsSourceVisible(block));
-            return block is null ? null : new InlineObjectElement(block.Length, editor.CreatePreview(block));
+            var part = editor.Layout.Decorations.FirstOrDefault(part => part.Start == offset);
+            if (part is null) return null;
+            return new MarkdownDecorationElement(part, () =>
+            {
+                if (part.Kind != InlineMarkdownLayout.DecorationKind.Task) return;
+                editor.ToggleTask(part);
+            }, cell => InlineMarkdownMetrics.Measure(editor, cell));
         }
     }
 
-    private sealed class ActiveLineStyling : DocumentColorizingTransformer
+    private sealed class AlignmentGenerator(LiveMarkdownEditor editor) : VisualLineElementGenerator
+    {
+        private readonly List<InlineMarkdownLayout.Decoration> _spaces = [];
+        public override void StartGeneration(ITextRunConstructionContext context)
+        {
+            base.StartGeneration(context); _spaces.Clear();
+            if (editor._appearance.TextAlignment != NoteTextAlignment.Justify) return;
+            var line = context.VisualLine.FirstDocumentLine;
+            if (editor.Layout.Decorations.Any(part => part.Start >= line.Offset && part.Start <= line.EndOffset && part.Kind is InlineMarkdownLayout.DecorationKind.TableEdge or InlineMarkdownLayout.DecorationKind.TableRule)) return;
+            if (editor._blocks.Any(block => block.IsCode && line.Offset >= block.Start && line.Offset < block.Start + block.Length)) return;
+            var prefix = editor.Layout.Decorations.FirstOrDefault(part => part.Start == line.Offset && part.Kind is InlineMarkdownLayout.DecorationKind.Bullet or InlineMarkdownLayout.DecorationKind.Number or InlineMarkdownLayout.DecorationKind.Task or InlineMarkdownLayout.DecorationKind.Quote or InlineMarkdownLayout.DecorationKind.Indent);
+            var contentStart = line.Offset + (prefix?.Length ?? 0);
+            var indent = prefix is null ? 0 : (prefix.Indent + (prefix.Kind == InlineMarkdownLayout.DecorationKind.Indent ? 0 : prefix.Kind == InlineMarkdownLayout.DecorationKind.Quote ? 10 : 16)) * editor.FontSize / 14;
+            var available = editor.TextArea.TextView.ActualWidth - indent - 2;
+            if (available <= 20) return;
+            var words = Regex.Matches(editor.Text[contentStart..line.EndOffset], @"\S+").Select(match => new InlineMarkdownLayout.Cell(contentStart + match.Index, match.Length)).ToArray();
+            var gaps = new List<InlineMarkdownLayout.Cell>(); var widths = new List<double>(); double row = 0;
+            InlineMarkdownLayout.Cell? previous = null;
+            foreach (var word in words)
+            {
+                var wordWidth = InlineMarkdownMetrics.Measure(editor, word);
+                var gap = previous is null ? null : new InlineMarkdownLayout.Cell(previous.Start + previous.Length, word.Start - previous.Start - previous.Length);
+                var gapWidth = gap is null ? 0 : InlineMarkdownMetrics.Measure(editor, gap);
+                if (row + gapWidth + wordWidth > available && previous is not null)
+                {
+                    if (gaps.Count > 0)
+                        for (var index = 0; index < gaps.Count; index++)
+                            _spaces.Add(new(gaps[index].Start, gaps[index].Length, InlineMarkdownLayout.DecorationKind.Spacing, Indent: (widths[index] + Math.Max(0, available - row) / gaps.Count) * 14 / editor.FontSize));
+                    gaps.Clear(); widths.Clear(); row = wordWidth;
+                }
+                else
+                {
+                    row += gapWidth + wordWidth;
+                    if (gap is not null && gap.Length > 0) { gaps.Add(gap); widths.Add(gapWidth); }
+                }
+                previous = word;
+            }
+        }
+        public override int GetFirstInterestedOffset(int startOffset)
+        {
+            if (editor._appearance.TextAlignment == NoteTextAlignment.Justify) return _spaces.FirstOrDefault(part => part.Start >= startOffset)?.Start ?? -1;
+            var start = CurrentContext.VisualLine.FirstDocumentLine.Offset;
+            return editor._appearance.TextAlignment is NoteTextAlignment.Center or NoteTextAlignment.Right && startOffset <= start ? start : -1;
+        }
+        public override VisualLineElement? ConstructElement(int offset)
+        {
+            if (editor._appearance.TextAlignment == NoteTextAlignment.Justify)
+            {
+                var spacing = _spaces.FirstOrDefault(part => part.Start == offset);
+                return spacing is null ? null : new MarkdownDecorationElement(spacing, () => { });
+            }
+            var line = CurrentContext.VisualLine.FirstDocumentLine;
+            var width = InlineMarkdownMetrics.Measure(editor, new(line.Offset, line.Length));
+            foreach (var part in editor.Layout.Decorations.Where(part => part.Start >= line.Offset && part.Start < line.EndOffset && part.Kind != InlineMarkdownLayout.DecorationKind.Hidden))
+            {
+                width -= InlineMarkdownMetrics.Measure(editor, new(part.Start, part.Length));
+                width += part.Kind switch
+                {
+                    InlineMarkdownLayout.DecorationKind.Indent => part.Indent * editor.FontSize / 14,
+                    InlineMarkdownLayout.DecorationKind.Bullet or InlineMarkdownLayout.DecorationKind.Task or InlineMarkdownLayout.DecorationKind.Number => (part.Indent + 16) * editor.FontSize / 14,
+                    InlineMarkdownLayout.DecorationKind.Quote => 10 * editor.FontSize / 14,
+                    _ => 0
+                };
+            }
+            // Tables keep a shared column origin, rather than aligning individual rows independently.
+            if (editor.Layout.Decorations.Any(part => part.Start >= line.Offset && part.Start <= line.EndOffset && part.Kind is InlineMarkdownLayout.DecorationKind.TableEdge or InlineMarkdownLayout.DecorationKind.TableRule)) return null;
+            var padding = Math.Max(0, editor.TextArea.TextView.ActualWidth - width - 2);
+            if (editor._appearance.TextAlignment == NoteTextAlignment.Center) padding /= 2;
+            return padding <= 0 ? null : new MarkdownDecorationElement(new(offset, 0, InlineMarkdownLayout.DecorationKind.Indent, Indent: padding * 14 / editor.FontSize), () => { });
+        }
+    }
+
+    private sealed class InlineStyling(LiveMarkdownEditor editor) : DocumentColorizingTransformer
     {
         protected override void ColorizeLine(ICSharpCode.AvalonEdit.Document.DocumentLine line)
         {
-            var text = CurrentContext.Document.GetText(line); var heading = Regex.Match(text, @"^#{1,6} ");
-            if (heading.Success) ChangeLinePart(line.Offset, line.EndOffset, element =>
-            { element.TextRunProperties.SetFontRenderingEmSize(CurrentContext.GlobalTextRunProperties.FontRenderingEmSize * (1.9 - heading.Length * 0.12)); });
-            foreach (Match match in Regex.Matches(text, @"(\*\*.+?\*\*|(?<!\*)\*[^*]+\*(?!\*)|`[^`]+`|~~.+?~~|==.+?==)"))
-                ChangeLinePart(line.Offset + match.Index, line.Offset + match.Index + match.Length, element =>
+            foreach (var range in editor.Layout.Styles)
+            {
+                var start = Math.Max(line.Offset, range.Start); var end = Math.Min(line.EndOffset, range.Start + range.Length);
+                if (start >= end) continue;
+                ChangeLinePart(start, end, element =>
                 {
-                    var face = element.TextRunProperties.Typeface;
-                    element.TextRunProperties.SetTypeface(new Typeface(match.Value.StartsWith('`') ? new FontFamily("Consolas") : face.FontFamily,
-                        match.Value.StartsWith('*') && !match.Value.StartsWith("**", StringComparison.Ordinal) ? FontStyles.Italic : face.Style,
-                        match.Value.StartsWith("**", StringComparison.Ordinal) ? FontWeights.Bold : face.Weight, face.Stretch));
-                    if (match.Value.StartsWith("~~", StringComparison.Ordinal)) element.TextRunProperties.SetTextDecorations(TextDecorations.Strikethrough);
-                    if (match.Value.StartsWith("==", StringComparison.Ordinal)) element.TextRunProperties.SetBackgroundBrush(Brushes.LightGoldenrodYellow);
+                    var style = range.Style; var face = element.TextRunProperties.Typeface;
+                    element.TextRunProperties.SetTypeface(new Typeface(style.HasFlag(InlineMarkdownLayout.Style.Code) ? new FontFamily("Consolas") : face.FontFamily,
+                        style.HasFlag(InlineMarkdownLayout.Style.Italic) ? FontStyles.Italic : face.Style,
+                        style.HasFlag(InlineMarkdownLayout.Style.Bold) ? FontWeights.Bold : face.Weight, face.Stretch));
+                    if (range.Scale != 1) element.TextRunProperties.SetFontRenderingEmSize(editor.FontSize * range.Scale);
+                    if (style.HasFlag(InlineMarkdownLayout.Style.Strike)) element.TextRunProperties.SetTextDecorations(TextDecorations.Strikethrough);
+                    if (style.HasFlag(InlineMarkdownLayout.Style.Highlight)) element.TextRunProperties.SetBackgroundBrush(Brushes.LightGoldenrodYellow);
+                    if (style.HasFlag(InlineMarkdownLayout.Style.Code)) element.TextRunProperties.SetBackgroundBrush(new SolidColorBrush(Color.FromArgb(16, 0, 0, 0)));
+                    if (style.HasFlag(InlineMarkdownLayout.Style.Link))
+                    { element.TextRunProperties.SetForegroundBrush(Brushes.SteelBlue); element.TextRunProperties.SetTextDecorations(TextDecorations.Underline); }
                 });
+            }
         }
     }
 
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;
-        foreach (var section in _collapsed) section.Uncollapse(); _collapsed.Clear();
-        TextChanged -= OnTextChanged; TextArea.Caret.PositionChanged -= OnCaretChanged; TextArea.SelectionChanged -= OnCaretChanged;
-        GotKeyboardFocus -= OnFocusChanged; LostKeyboardFocus -= OnFocusChanged; PreviewKeyDown -= OnKey;
+        TextChanged -= OnTextChanged; PreviewKeyDown -= OnKey;
+        TextArea.PreviewMouseLeftButtonDown -= OnEditorMouseDown;
         PreviewTextInput -= OnTextInput; _search.Uninstall();
     }
 

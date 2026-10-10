@@ -87,7 +87,6 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
             collection.AddSingleton<AutosaveCoordinator>();
             collection.AddSingleton<IWindowLayerController, WindowLayerController>();
             collection.AddSingleton<IDesktopMenuRegistration>(new DesktopMenuRegistration(Environment.ProcessPath!));
-            collection.AddSingleton<IMarkdownRenderer, MarkdownRenderer>();
             collection.AddSingleton<GroupSelectionSession>();
             collection.AddSingleton<DesktopClickObserver>();
             _services = collection.BuildServiceProvider();
@@ -127,7 +126,7 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
             () => _windows[id].HideNote(),
             () => DeleteNote(id));
         var services = _services!;
-        var window = new NoteWindow(vm, services.GetRequiredService<IWindowLayerController>(), services.GetRequiredService<IMarkdownRenderer>());
+        var window = new NoteWindow(vm, services.GetRequiredService<IWindowLayerController>());
         window.NewNoteRequested = CreateNote;
         window.SaveRequested = () =>
         {

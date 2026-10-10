@@ -25,7 +25,7 @@ public sealed class WindowsInteractionTests
     {
         var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
         using var vm = new NoteViewModel(note, notes, () => { }, () => { });
-        var host = new NoteWindow(vm, new Layers(), new MarkdownRenderer());
+        var host = new NoteWindow(vm, new Layers());
         var created = 0; var saved = 0;
         host.NewNoteRequested = () => created++;
         host.SaveRequested = () => saved++;
@@ -46,7 +46,7 @@ public sealed class WindowsInteractionTests
     {
         var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
         using var vm = new NoteViewModel(note, notes, () => { }, () => { }); vm.Markdown = "before word after";
-        var host = new NoteWindow(vm, new Layers(), new MarkdownRenderer());
+        var host = new NoteWindow(vm, new Layers());
         try
         {
             var editor = host.MarkdownEditor;
@@ -81,7 +81,7 @@ public sealed class WindowsInteractionTests
     {
         var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
         using var vm = new NoteViewModel(note, notes, () => { }, () => { });
-        var host = new NoteWindow(vm, new Layers(), new MarkdownRenderer());
+        var host = new NoteWindow(vm, new Layers());
         var external = new Window { ShowInTaskbar = false };
         using var clicks = new DesktopClickObserver();
         using var board = new BoardInteractionController(notes, new GroupSelectionSession(notes), clicks, _ => host, Dispatcher.CurrentDispatcher);
@@ -134,7 +134,7 @@ public sealed class WindowsInteractionTests
     {
         var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
         using var vm = new NoteViewModel(note, notes, () => { }, () => { }); vm.Markdown = "# Heading\n\n**bold** text";
-        var host = new NoteWindow(vm, new Layers(), new MarkdownRenderer());
+        var host = new NoteWindow(vm, new Layers());
         using var toolbar = new NoteFormattingToolbar(host, vm);
         try
         {
@@ -184,7 +184,7 @@ public sealed class WindowsInteractionTests
         {
             foreach (var note in new[] { a, b })
             {
-                var window = new NoteWindow(new NoteViewModel(note, notes, () => { }, () => { }), new Layers(), new MarkdownRenderer());
+                var window = new NoteWindow(new NoteViewModel(note, notes, () => { }, () => { }), new Layers());
                 windows.Add(note.Id, window); board.Attach(window);
             }
             windows[a.Id].ConnectionClicked!(windows[a.Id]);
@@ -405,7 +405,7 @@ public sealed class WindowsInteractionTests
         {
             if (windows.TryGetValue(id, out var found)) return found;
             var vm = new NoteViewModel(notes.Get(id), notes, () => { }, () => { });
-            var window = new NoteWindow(vm, new Layers(), new MarkdownRenderer());
+            var window = new NoteWindow(vm, new Layers());
             windows.Add(id, window);
             board!.Attach(window);
             return window;
@@ -444,7 +444,7 @@ public sealed class WindowsInteractionTests
         var a = notes.Create(100, 100); var b = notes.Create(450, 100);
         var selection = new GroupSelectionSession(notes);
         using var clicks = new DesktopClickObserver();
-        using var window = new WindowLifetime(new NoteWindow(new NoteViewModel(a, notes, () => { }, () => { }), new Layers(), new MarkdownRenderer()));
+        using var window = new WindowLifetime(new NoteWindow(new NoteViewModel(a, notes, () => { }, () => { }), new Layers()));
         using var board = new BoardInteractionController(notes, selection, clicks, _ => window.Window, Dispatcher.CurrentDispatcher);
         board.Attach(window.Window);
         window.Window.ControlClicked!(window.Window);

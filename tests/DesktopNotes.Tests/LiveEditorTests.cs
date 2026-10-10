@@ -17,7 +17,7 @@ public sealed class LiveEditorTests
     public Task ShiftEnterListContinuationRemainsOnSeparateLineAfterLosingFocus() => OnSta(() =>
     {
         const string source = "Привет\n\n- первая строка";
-        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = source, Width = 320, Height = 200 };
+        using var editor = new LiveMarkdownEditor() { Text = source, Width = 320, Height = 200 };
         var surface = new Grid { Width = 320, Height = 200, Background = new SolidColorBrush(Color.FromRgb(228, 216, 250)) };
         surface.Children.Add(editor);
         var root = new StackPanel(); root.Children.Add(surface);
@@ -40,20 +40,16 @@ public sealed class LiveEditorTests
             Assert.Equal(expected, editor.Text);
             Keyboard.Focus(otherControl); host.UpdateLayout();
             Assert.False(editor.IsKeyboardFocusWithin);
-            var view = Assert.Single(editor.TextArea.TextView.VisualLines.SelectMany(line => line.Elements)
-                .OfType<ICSharpCode.AvalonEdit.Rendering.InlineObjectElement>().Select(element => element.Element).OfType<RichTextBox>(),
-                view => view.Document.Blocks.FirstBlock is System.Windows.Documents.List);
-            var list = Assert.IsType<System.Windows.Documents.List>(view.Document.Blocks.FirstBlock);
-            Assert.Single(list.ListItems);
-            var paragraph = Assert.IsType<Paragraph>(list.ListItems.FirstListItem.Blocks.FirstBlock);
-            Assert.Single(paragraph.Inlines.OfType<LineBreak>());
-            var first = paragraph.Inlines.FirstInline.ContentStart.GetCharacterRect(LogicalDirection.Forward);
-            var next = paragraph.Inlines.LastInline.ContentStart.GetCharacterRect(LogicalDirection.Forward);
-            Assert.True(next.Top > first.Top + 5);
+            var lines = editor.TextArea.TextView.VisualLines;
+            var first = lines.Single(line => line.FirstDocumentLine.LineNumber == 3);
+            var continuation = lines.Single(line => line.FirstDocumentLine.LineNumber == 4);
+            Assert.True(continuation.VisualTop > first.VisualTop + 5);
+            Assert.Single(first.Elements.OfType<MarkdownDecorationElement>(), element => element.Decoration.Kind == InlineMarkdownLayout.DecorationKind.Bullet);
+            Assert.Single(continuation.Elements.OfType<MarkdownDecorationElement>(), element => element.Decoration.Kind == InlineMarkdownLayout.DecorationKind.Indent);
             Assert.Equal(expected, editor.Text);
             Capture("compact-note-preview.png");
             Keyboard.Focus(editor.TextArea); editor.CaretOffset = expected.Length; host.UpdateLayout();
-            Assert.True(editor.IsSourceVisible(editor.PreviewBlocks.Last())); Assert.Equal(expected, editor.Text);
+            Assert.Equal(expected, editor.Text);
         }
         finally { host.Close(); }
     });
@@ -73,7 +69,7 @@ public sealed class LiveEditorTests
     [InlineData("first\r\n- item")]
     public Task ShiftEnterInsertsOnlyNewlineInEveryContext(string source) => OnSta(() =>
     {
-        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = source };
+        using var editor = new LiveMarkdownEditor() { Text = source };
         editor.Select(source.Length, 0);
         var newline = source.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.Shift));
@@ -87,7 +83,7 @@ public sealed class LiveEditorTests
     [Fact]
     public Task ShiftEnterReplacesSelectionAndEnterStillContinuesStructures() => OnSta(() =>
     {
-        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = "- first second" };
+        using var editor = new LiveMarkdownEditor() { Text = "- first second" };
         editor.Select(7, 7);
         Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.Shift));
         Assert.Equal("- first\n", editor.Text); Assert.Equal(8, editor.CaretOffset);
@@ -103,7 +99,7 @@ public sealed class LiveEditorTests
     public Task BuiltInNavigationAndSelectionWorkWithLivePreview() => OnSta(() =>
     {
         const string source = "one two\nthree four\n\n# heading";
-        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = source };
+        using var editor = new LiveMarkdownEditor() { Text = source };
         var host = new Window { Content = editor, Left = -10000, Top = -10000, Width = 320, Height = 280, ShowActivated = false, ShowInTaskbar = false };
         try
         {
@@ -122,7 +118,7 @@ public sealed class LiveEditorTests
     [Fact]
     public Task ObsidianTaskAndLinkShortcutsAreDistinctAndUndoable() => OnSta(() =>
     {
-        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = "  - first\n  - [ ] second\n\n[[Target|caption]]\n\n[web](https://example.com)" };
+        using var editor = new LiveMarkdownEditor() { Text = "  - first\n  - [ ] second\n\n[[Target|caption]]\n\n[web](https://example.com)" };
         editor.Select(0, editor.Text.IndexOf("\n\n", StringComparison.Ordinal));
         Assert.True(editor.HandleShortcut(Key.L, ModifierKeys.Control));
         Assert.StartsWith("  - [ ] first\n  - [x] second", editor.Text);
@@ -146,7 +142,7 @@ public sealed class LiveEditorTests
     public Task WordShortcutsOperateOnSourceAcrossRenderedBlocks() => OnSta(() =>
     {
         const string source = "first\n\nsecond third";
-        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = source };
+        using var editor = new LiveMarkdownEditor() { Text = source };
         editor.Select(0, 0);
         Assert.True(editor.HandleShortcut(Key.Right, ModifierKeys.Control)); Assert.Equal(5, editor.CaretOffset);
         editor.HandleShortcut(Key.Right, ModifierKeys.Control | ModifierKeys.Shift); Assert.Equal("\n\nsecond", editor.SelectedText);
@@ -160,7 +156,7 @@ public sealed class LiveEditorTests
     [Fact]
     public Task LineShortcutsRespectExclusiveSelectionAndCRLF() => OnSta(() =>
     {
-        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = "one\r\ntwo\r\nthree" };
+        using var editor = new LiveMarkdownEditor() { Text = "one\r\ntwo\r\nthree" };
         editor.Select(5, 0); editor.HandleShortcut(Key.OemCloseBrackets, ModifierKeys.Control);
         Assert.Equal("one\r\n  two\r\nthree", editor.Text);
         editor.HandleShortcut(Key.OemOpenBrackets, ModifierKeys.Control); Assert.Equal("one\r\ntwo\r\nthree", editor.Text);
@@ -180,7 +176,7 @@ public sealed class LiveEditorTests
     [InlineData("# Heading\n\nplain\ntext\n\nmore")]
     public Task SavedMultilineMarkdownCanRenderAtStartup(string source) => OnSta(() =>
     {
-        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = source };
+        using var editor = new LiveMarkdownEditor() { Text = source };
         var host = new Window { Content = editor, Left = -10000, Top = -10000, Width = 320, Height = 280, ShowActivated = false, ShowInTaskbar = false };
         try
         {
@@ -261,7 +257,7 @@ public sealed class LiveEditorTests
     public Task LivePreviewDoesNotRewriteMarkdownAndTableNavigationIsUndoable() => OnSta(() =>
     {
         const string source = "# Title\n\n**bold** and *italic*\n\n| A | B |\n| --- | --- |\n| one | two |";
-        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = source, Width = 440, Height = 360 };
+        using var editor = new LiveMarkdownEditor() { Text = source, Width = 440, Height = 360 };
         var surface = new Grid { Background = Brushes.White }; surface.Children.Add(editor);
         var host = new Window { Content = surface, Left = -10000, Top = -10000, Width = 460, Height = 400, ShowActivated = false, ShowInTaskbar = false };
         try
@@ -294,8 +290,7 @@ public sealed class LiveEditorTests
         System.Windows.Input.Keyboard.Focus(editor.TextArea);
         editor.CaretOffset = source.IndexOf("bold", StringComparison.Ordinal) + 2;
         Assert.True(editor.IsKeyboardFocusWithin);
-        Assert.True(editor.IsSourceVisible(editor.PreviewBlocks[1]));
-        Assert.False(editor.IsSourceVisible(editor.PreviewBlocks[0]));
+        Assert.DoesNotContain(editor.TextArea.TextView.VisualLines.SelectMany(line => line.Elements), element => element is ICSharpCode.AvalonEdit.Rendering.InlineObjectElement);
         editor.UpdateLayout();
         Assert.Equal(source, editor.Text);
         }
@@ -313,7 +308,7 @@ public sealed class LiveEditorTests
         Assert.True(LiveMarkdownEditor.IsInteractivePreviewElement(checkbox));
         // Text in a checkbox must not be intercepted as a request to edit Markdown.
         Assert.True(LiveMarkdownEditor.IsInteractivePreviewElement(content));
-        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = "before code after" };
+        using var editor = new LiveMarkdownEditor() { Text = "before code after" };
         editor.Select(7, 4); editor.InsertCodeBlock();
         Assert.Equal("code", editor.SelectedText);
         Assert.Contains("```\ncode\n```", editor.Text);
@@ -323,7 +318,7 @@ public sealed class LiveEditorTests
     [Fact]
     public Task InlineEditsPreserveUndoAndStableInternalLinkIds() => OnSta(() =>
     {
-        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = "before word after" };
+        using var editor = new LiveMarkdownEditor() { Text = "before word after" };
         editor.Select(7, 4); editor.ToggleBoldSelection(); Assert.Equal("before **word** after", editor.Text);
         editor.Undo(); Assert.Equal("before word after", editor.Text); editor.Redo(); Assert.Equal("before **word** after", editor.Text);
         editor.Select(0, 0); var id = Guid.NewGuid(); editor.InsertNoteLink(id, "Title");

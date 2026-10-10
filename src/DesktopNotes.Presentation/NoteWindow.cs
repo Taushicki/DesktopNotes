@@ -52,7 +52,7 @@ public sealed class NoteWindow : Window
     private bool _ready;
     private bool _closing;
 
-    public NoteWindow(NoteViewModel vm, IWindowLayerController layers, IMarkdownRenderer markdown)
+    public NoteWindow(NoteViewModel vm, IWindowLayerController layers)
     {
         _vm = vm; _layers = layers;
         DataContext = vm;
@@ -131,7 +131,7 @@ public sealed class NoteWindow : Window
         Grid.SetColumn(collapse, 1); header.Children.Add(collapse);
         root.Children.Add(header);
 
-        _editor = new LiveMarkdownEditor(markdown) { Text = vm.Markdown, ContextMenu = ContextMenu };
+        _editor = new LiveMarkdownEditor() { Text = vm.Markdown, ContextMenu = ContextMenu };
         _editor.TextChanged += (_, _) => { if (_editor.Text != _vm.Markdown) _vm.Markdown = _editor.Text; };
         _editor.OpenNoteRequested += destination => OpenNoteLink?.Invoke(destination);
         _editor.OpenWebLinkRequested += uri =>
@@ -163,6 +163,8 @@ public sealed class NoteWindow : Window
         PreviewMouseLeftButtonDown += (_, e) =>
         {
             if (LiveMarkdownEditor.IsInteractivePreviewElement(e.OriginalSource as DependencyObject)) return;
+            if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) != 0 && _editor.IsMouseOver && _editor.HandleInteractiveClick(e))
+            { e.Handled = true; return; }
             if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) == 0)
             {
                 ConnectionClicked?.Invoke(this);
