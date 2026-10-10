@@ -38,22 +38,21 @@ public sealed class NoteViewModel : INotifyPropertyChanged, IDisposable
         _note = note;
         _service = service;
         _service.NoteUpdated += OnNoteUpdated;
-        ToggleCollapsed = new RelayCommand(() => Change(_note with { IsCollapsed = !_note.IsCollapsed }, nameof(IsCollapsed)));
+        ToggleCollapsed = new RelayCommand(() => Change(_note with { IsCollapsed = !_note.IsCollapsed }));
         Hide = new RelayCommand(hide);
         Delete = new RelayCommand(delete);
     }
 
-    private void Change(Note note, [CallerMemberName] string? property = null)
+    private void Change(Note note)
     {
         if (note == _note) return;
         _service.Update(note);
-        OnChanged(property);
     }
 
     public void SetBounds(double x, double y, double width, double height) =>
-        Change(_note with { X = x, Y = y, Width = Math.Max(220, width), Height = Math.Max(140, height) }, nameof(Snapshot));
+        Change(_note with { X = x, Y = y, Width = Math.Max(220, width), Height = Math.Max(140, height) });
 
-    public void SetHidden(bool hidden) => Change(_note with { IsHidden = hidden }, nameof(Snapshot));
+    public void SetHidden(bool hidden) => Change(_note with { IsHidden = hidden });
     private void OnNoteUpdated(Note note)
     {
         if (note.Id != _note.Id || note == _note) return;

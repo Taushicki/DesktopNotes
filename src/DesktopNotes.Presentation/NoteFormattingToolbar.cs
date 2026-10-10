@@ -80,17 +80,17 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         Sync();
     }
 
-    private void Sync()
+    private void Sync(string? property = null)
     {
         _updating = true;
-        _size.Text = _vm.FontSize.ToString(CultureInfo.CurrentCulture);
-        _color.Content = new System.Windows.Shapes.Ellipse { Width = 23, Height = 23, Fill = (Brush)new BrushConverter().ConvertFromString(Palette[(int)_vm.Color])!, Stroke = Brushes.SlateGray, StrokeThickness = 0.8 };
-        _bold.Background = _vm.IsBold ? Brushes.LightBlue : Brushes.Transparent;
-        _alignment.Content = AlignmentIcon(_vm.TextAlignment);
-        _pin.Content = CreateIcon(_vm.IsPinned ? "M 5,10 L 5,6 C 5,0 15,0 15,6 L 15,10 M 3,10 L 17,10 L 17,22 L 3,22 Z M 10,14 L 10,18"
+        if (property is null or nameof(NoteViewModel.FontSize)) _size.Text = _vm.FontSize.ToString(CultureInfo.CurrentCulture);
+        if (property is null or nameof(NoteViewModel.Color)) _color.Content = new System.Windows.Shapes.Ellipse { Width = 23, Height = 23, Fill = (Brush)new BrushConverter().ConvertFromString(Palette[(int)_vm.Color])!, Stroke = Brushes.SlateGray, StrokeThickness = 0.8 };
+        if (property is null or nameof(NoteViewModel.IsBold)) _bold.Background = _vm.IsBold ? Brushes.LightBlue : Brushes.Transparent;
+        if (property is null or nameof(NoteViewModel.TextAlignment)) _alignment.Content = AlignmentIcon(_vm.TextAlignment);
+        if (property is null or nameof(NoteViewModel.IsPinned)) _pin.Content = CreateIcon(_vm.IsPinned ? "M 5,10 L 5,6 C 5,0 15,0 15,6 L 15,10 M 3,10 L 17,10 L 17,22 L 3,22 Z M 10,14 L 10,18"
             : "M 5,10 L 5,6 C 5,0 15,0 15,6 M 3,10 L 17,10 L 17,22 L 3,22 Z M 10,14 L 10,18");
-        _pin.Background = _vm.IsPinned ? Brushes.LightBlue : Brushes.Transparent;
-        AutomationProperties.SetName(_pin, _vm.IsPinned ? "Открепить положение заметки" : "Закрепить положение заметки");
+        if (property is null or nameof(NoteViewModel.IsPinned)) _pin.Background = _vm.IsPinned ? Brushes.LightBlue : Brushes.Transparent;
+        if (property is null or nameof(NoteViewModel.IsPinned)) AutomationProperties.SetName(_pin, _vm.IsPinned ? "Открепить положение заметки" : "Закрепить положение заметки");
         _updating = false;
     }
 
@@ -186,7 +186,11 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         if (!IsVisible) Show();
         _timer.Start();
     }
-    private void Changed(object? sender, PropertyChangedEventArgs args) { Sync(); Refresh(); }
+    private void Changed(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is nameof(NoteViewModel.Color) or nameof(NoteViewModel.FontSize) or nameof(NoteViewModel.IsBold) or nameof(NoteViewModel.TextAlignment) or nameof(NoteViewModel.IsPinned)) Sync(args.PropertyName);
+        if (args.PropertyName is nameof(NoteViewModel.IsCollapsed) or nameof(NoteViewModel.Layer)) Refresh();
+    }
     private void GeometryChanged(object? sender, EventArgs args) => Refresh();
     private void SizeChangedOnHost(object sender, SizeChangedEventArgs args) => Refresh();
     private void VisibilityChanged(object sender, DependencyPropertyChangedEventArgs args) => Refresh();

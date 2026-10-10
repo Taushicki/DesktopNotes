@@ -63,7 +63,10 @@ public sealed class JsonNoteRepository(string directory) : INoteRepository
     public Task SaveAsync(IReadOnlyList<Note> notes, CancellationToken cancellationToken = default) =>
         SaveAsync(new WorkspaceSnapshot { Notes = notes }, cancellationToken);
 
-    public async Task SaveAsync(WorkspaceSnapshot snapshot, CancellationToken cancellationToken = default)
+    public Task SaveAsync(WorkspaceSnapshot snapshot, CancellationToken cancellationToken = default) =>
+        Task.Run(() => SaveCoreAsync(snapshot, cancellationToken), cancellationToken);
+
+    private async Task SaveCoreAsync(WorkspaceSnapshot snapshot, CancellationToken cancellationToken)
     {
         snapshot.Validate();
         Directory.CreateDirectory(directory);

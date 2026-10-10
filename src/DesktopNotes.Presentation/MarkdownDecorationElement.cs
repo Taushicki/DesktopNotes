@@ -10,12 +10,12 @@ namespace DesktopNotes.Presentation;
 
 // One visual caret step maps to the original Markdown marker. Text remains native,
 // selectable and editable; unlike a block preview, this never replaces a paragraph.
-internal sealed class MarkdownDecorationElement(InlineMarkdownLayout.Decoration part, Action activate, Func<InlineMarkdownLayout.Cell, double>? measure = null)
+internal sealed class MarkdownDecorationElement(InlineMarkdownLayout.Decoration part, Action activate, Func<InlineMarkdownLayout.Cell, double>? measure = null, Func<IReadOnlyList<InlineMarkdownLayout.Cell>, double>? measureColumn = null)
     : VisualLineElement(1, part.Length)
 {
     internal InlineMarkdownLayout.Decoration Decoration => part;
     public override bool IsWhitespace(int visualColumn) => part.Kind is not (InlineMarkdownLayout.DecorationKind.Rule or InlineMarkdownLayout.DecorationKind.TableEdge or InlineMarkdownLayout.DecorationKind.TableGap or InlineMarkdownLayout.DecorationKind.TableRule);
-    public override TextRun CreateTextRun(int startVisualColumn, ITextRunConstructionContext context) => new DecorationRun(this, part, measure);
+    public override TextRun CreateTextRun(int startVisualColumn, ITextRunConstructionContext context) => new DecorationRun(this, part, measure, measureColumn);
     protected override void OnMouseDown(MouseButtonEventArgs e)
     {
         if (part.Kind != InlineMarkdownLayout.DecorationKind.Task || e.ChangedButton != MouseButton.Left) return;
@@ -34,7 +34,7 @@ internal sealed class MarkdownDecorationElement(InlineMarkdownLayout.Decoration 
         private readonly FormattedText _sample;
         private readonly FormattedText _label;
         private readonly double _width;
-        internal DecorationRun(MarkdownDecorationElement element, InlineMarkdownLayout.Decoration part, Func<InlineMarkdownLayout.Cell, double>? measure)
+        internal DecorationRun(MarkdownDecorationElement element, InlineMarkdownLayout.Decoration part, Func<InlineMarkdownLayout.Cell, double>? measure, Func<IReadOnlyList<InlineMarkdownLayout.Cell>, double>? measureColumn)
         {
             _element = element; _part = part;
             var properties = element.TextRunProperties;
@@ -43,7 +43,7 @@ internal sealed class MarkdownDecorationElement(InlineMarkdownLayout.Decoration 
                 properties.Typeface, size, properties.ForegroundBrush, 1);
             _label = new FormattedText(part.Label, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                 properties.Typeface, size, properties.ForegroundBrush, 1);
-            double Width(IReadOnlyList<InlineMarkdownLayout.Cell> column) => Math.Max(24 * size / 14, column.Select(cell => measure?.Invoke(cell) ?? 0).DefaultIfEmpty().Max());
+            double Width(IReadOnlyList<InlineMarkdownLayout.Cell> column) => measureColumn?.Invoke(column) ?? Math.Max(24 * size / 14, column.Select(cell => measure?.Invoke(cell) ?? 0).DefaultIfEmpty().Max());
             _width = part.Kind switch
             {
                 InlineMarkdownLayout.DecorationKind.Hidden => 0,

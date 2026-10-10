@@ -398,7 +398,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             {
                 if (part.Kind != InlineMarkdownLayout.DecorationKind.Task) return;
                 editor.ToggleTask(part);
-            }, cell => InlineMarkdownMetrics.Measure(editor, cell));
+            }, cell => InlineMarkdownMetrics.Measure(editor, cell), column => InlineMarkdownMetrics.MeasureColumn(editor, column));
         }
     }
 

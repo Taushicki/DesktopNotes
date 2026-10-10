@@ -262,6 +262,23 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
         Shutdown();
     }
 
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        base.OnSessionEnding(e);
+        if (e.Cancel || _save is null) return;
+        logger.Write(AppLogLevel.Information, "Shutdown.SessionEnding", e.ReasonSessionEnding.ToString());
+        _board?.CommitSelection();
+        foreach (var window in _windows.Values) window.SaveBounds();
+        // FlushAsync captures the snapshot now, then completes entirely without the
+        // dispatcher. Notifications are posted, so this synchronous OS callback
+        // cannot deadlock with a previously running autosave.
+        if (!_save.FlushAsync().GetAwaiter().GetResult())
+        {
+            e.Cancel = true;
+            System.Windows.MessageBox.Show("Завершение сеанса отменено: заметки не удалось сохранить. Повторите сохранение через меню трея.", "DesktopNotes", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     protected override void OnExit(ExitEventArgs e)
     {
         logger.Write(AppLogLevel.Information, "Shutdown.Exit", $"exitCode={e.ApplicationExitCode}");
