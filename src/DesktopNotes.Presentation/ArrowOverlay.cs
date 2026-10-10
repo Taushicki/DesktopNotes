@@ -163,8 +163,8 @@ internal sealed class ArrowOverlay : Window
         public bool IsSelected;
         // Update the old default appearance without overriding explicit custom widths.
         private bool LegacyStandard => LinkStyle.Pattern == LinkLinePattern.Solid && LinkStyle.Route == LinkRoute.Straight &&
-            ((LinkStyle.Width == 1.5 && LinkStyle.Color == "#64748B") || (LinkStyle.Width == 2.2 && LinkStyle.Color == "#475569"));
-        private double StrokeWidth => LegacyStandard ? 2 : LinkStyle.Width;
+            ((LinkStyle.Width == 2 && LinkStyle.Color == "#808080") || (LinkStyle.Width == 1.5 && LinkStyle.Color == "#64748B") || (LinkStyle.Width == 2.2 && LinkStyle.Color == "#475569"));
+        private double StrokeWidth => LegacyStandard ? 3 : LinkStyle.Width;
         private Point Local(DiagramPoint point) => new((point.X - PhysicalOrigin.Left) / Scale, (point.Y - PhysicalOrigin.Top) / Scale);
 
         private (Geometry Line, Geometry Head) Shapes()
@@ -208,8 +208,8 @@ internal sealed class ArrowOverlay : Window
             {
                 direction.Normalize();
                 var normal = new Vector(-direction.Y, direction.X);
-                var length = 10 + Math.Max(0, StrokeWidth - 2);
-                var halfWidth = 5 + Math.Max(0, StrokeWidth - 2) / 2;
+                var length = 12 + Math.Max(0, StrokeWidth - 2);
+                var halfWidth = 6 + Math.Max(0, StrokeWidth - 2) / 2;
                 using var context = head.Open();
                 context.BeginFigure(end, true, true);
                 context.LineTo(end - direction * length + normal * halfWidth, true, false);
@@ -240,7 +240,7 @@ internal sealed class ArrowOverlay : Window
                 dc.DrawGeometry(null, new Pen(hitBrush, Math.Max(12, StrokeWidth + 8)), geometry);
                 dc.DrawGeometry(hitBrush, null, head);
             }
-            var color = LegacyStandard ? "#808080" : LinkStyle.Color;
+            var color = LegacyStandard ? "#606060" : LinkStyle.Color;
             var brush = (Brush)new BrushConverter().ConvertFromString(color)!;
             var width = StrokeWidth + (IsHovered ? 0.35 : 0);
             var pen = new Pen(brush, width) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };

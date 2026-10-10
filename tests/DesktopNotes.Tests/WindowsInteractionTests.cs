@@ -265,7 +265,7 @@ public sealed class WindowsInteractionTests
             var pixels = new byte[image.PixelWidth * image.PixelHeight * 4];
             image.CopyPixels(pixels, image.PixelWidth * 4, 0);
             var index = ((int)tip.Y * image.PixelWidth + (int)tip.X) * 4;
-            Assert.InRange(pixels[index], (byte)110, (byte)150); // Grey arrowhead, no white endpoint ring.
+            Assert.InRange(pixels[index], (byte)75, (byte)115); // Grey arrowhead, no white endpoint ring.
             preview.Hide();
             Assert.False(preview.IsVisible);
         }
@@ -313,7 +313,7 @@ public sealed class WindowsInteractionTests
         var pixels = new byte[300 * 200 * 4]; image.CopyPixels(pixels, 1200, 0);
         var line = (160 * 300 + 75) * 4;
         Assert.Equal(pixels[line], pixels[line + 1]); Assert.Equal(pixels[line + 1], pixels[line + 2]);
-        Assert.InRange(pixels[line], (byte)110, (byte)150);
+        Assert.InRange(pixels[line], (byte)75, (byte)115);
         Assert.Equal(255, pixels[(160 * 300 + 30) * 4]); // White fill in the selected endpoint.
         var ring = (154 * 300 + 30) * 4;
         Assert.True(pixels[ring] > pixels[ring + 2]); // Blue ring, not a grey endpoint.
@@ -554,7 +554,7 @@ public sealed class WindowsInteractionTests
         try
         {
             var toolbar = host.FormattingToolbar;
-            Assert.Equal(272 * 0.7, toolbar.Width, 2); Assert.Equal(56 * 0.7, toolbar.Height, 2);
+            Assert.Equal(272 * 0.84, toolbar.Width, 2); Assert.Equal(56 * 0.84, toolbar.Height, 2);
             Assert.Equal(0, toolbar.FontSizeInput.BorderThickness.Left);
             var row = (StackPanel)((Border)toolbar.Content).Child;
             var size = (StackPanel)row.Children[1]; var arrows = (StackPanel)size.Children[1];

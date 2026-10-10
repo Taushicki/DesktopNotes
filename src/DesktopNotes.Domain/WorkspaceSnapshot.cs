@@ -15,8 +15,8 @@ public enum NoteSide { Left, Top, Right, Bottom }
 
 public sealed record LinkStyle
 {
-    public double Width { get; init; } = 2;
-    public string Color { get; init; } = "#808080";
+    public double Width { get; init; } = 3;
+    public string Color { get; init; } = "#606060";
     public LinkLinePattern Pattern { get; init; }
     public LinkRoute Route { get; init; }
 }

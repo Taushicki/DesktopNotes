@@ -186,8 +186,8 @@ internal sealed class EdgeLinkHandles : Grid, IDisposable
             if (!IsHovered) { dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(145, 202, 255)), new Pen(Brushes.White, 1.8), center, 4.5, 4.5); return; }
             dc.PushTransform(new TranslateTransform(center.X, center.Y));
             dc.PushTransform(new RotateTransform(Side switch { NoteSide.Left => 180, NoteSide.Top => 270, NoteSide.Bottom => 90, _ => 0 }));
-            var arrow = Geometry.Parse("M -7,-2 L 0,-2 L 0,-6 L 8,0 L 0,6 L 0,2 L -7,2 Z");
-            dc.DrawGeometry(new SolidColorBrush(Color.FromRgb(145, 202, 255)), new Pen(Brushes.White, 1.8) { LineJoin = PenLineJoin.Round }, arrow);
+            var arrow = Geometry.Parse("M -8,-3 L 0,-3 L 0,-7 L 9,0 L 0,7 L 0,3 L -8,3 Z");
+            dc.DrawGeometry(blue, new Pen(Brushes.White, 1.8) { LineJoin = PenLineJoin.Round }, arrow);
             dc.Pop(); dc.Pop();
         }
     }

@@ -21,7 +21,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     private readonly DispatcherTimer _timer;
     private readonly TextBox _size;
     internal TextBox FontSizeInput => _size;
-    internal const double ToolbarScale = 0.7;
+    internal const double ToolbarScale = 0.84;
     internal const double ToolbarWidth = 272 * ToolbarScale;
     internal const double ToolbarHeight = 56 * ToolbarScale;
     private readonly Button _color, _bold, _alignment, _pin, _layer;
@@ -40,7 +40,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         _color = Button("Цвет заметки", () => OpenPalette());
         row.Children.Add(_color);
-        _size = new TextBox { Width = 25, Height = 21, FontSize = 11, BorderThickness = new Thickness(0),
+        _size = new TextBox { Width = 30, Height = 25, FontSize = 13, BorderThickness = new Thickness(0),
             Background = Brushes.Transparent, VerticalContentAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center, Padding = new Thickness(0) };
         AutomationProperties.SetName(_size, "Размер шрифта");
         _size.LostKeyboardFocus += (_, _) => CommitSize();
@@ -50,20 +50,21 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
             if (e.Key is System.Windows.Input.Key.Up or System.Windows.Input.Key.Down)
             { ChangeSize(e.Key == System.Windows.Input.Key.Up ? 1 : -1); e.Handled = true; }
         };
-        var size = new StackPanel { Orientation = Orientation.Horizontal, Width = 38, VerticalAlignment = VerticalAlignment.Center };
+        var size = new StackPanel { Orientation = Orientation.Horizontal, Width = 46, VerticalAlignment = VerticalAlignment.Center };
         size.Children.Add(_size);
         var arrows = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         foreach (var delta in new[] { 1, -1 })
         {
             var step = Button(delta > 0 ? "Увеличить размер шрифта" : "Уменьшить размер шрифта", () => ChangeSize(delta));
-            step.Width = 10; step.Height = 10; step.Margin = new Thickness(0); step.Padding = new Thickness(1);
+            step.Width = 12; step.Height = 12; step.Margin = new Thickness(0); step.Padding = new Thickness(1);
             step.Content = CreateIcon(delta > 0 ? "M 0,4 L 4,0 L 8,4" : "M 0,0 L 4,4 L 8,0");
-            ((System.Windows.Shapes.Path)step.Content).Width = 6; ((System.Windows.Shapes.Path)step.Content).Height = 3;
+            ((System.Windows.Shapes.Path)step.Content).StrokeThickness = 1.8;
+            ((System.Windows.Shapes.Path)step.Content).Width = 8; ((System.Windows.Shapes.Path)step.Content).Height = 4;
             arrows.Children.Add(step);
         }
         size.Children.Add(arrows); row.Children.Add(size);
         _bold = Button("Жирный шрифт", _host.ToggleBoldFormatting);
-        _bold.Content = new TextBlock { Text = "B", FontWeight = FontWeights.Bold, FontStyle = FontStyles.Italic, FontSize = 13 };
+        _bold.Content = new TextBlock { Text = "B", FontWeight = FontWeights.Bold, FontStyle = FontStyles.Italic, FontSize = 16 };
         row.Children.Add(_bold);
         _alignment = Button("Выравнивание текста", OpenAlignment);
         row.Children.Add(_alignment);
@@ -76,7 +77,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         ((System.Windows.Shapes.Path)delete.Content).Stroke = Brushes.Firebrick;
         row.Children.Add(delete);
         Content = new Border { UseLayoutRounding = true, SnapsToDevicePixels = true,
-            Margin = new Thickness(4), Padding = new Thickness(3, 0, 3, 0), CornerRadius = new CornerRadius(7),
+            Margin = new Thickness(5), Padding = new Thickness(4, 0, 4, 0), CornerRadius = new CornerRadius(8),
             Background = new SolidColorBrush(Color.FromRgb(252, 253, 255)), BorderBrush = new SolidColorBrush(Color.FromRgb(210, 219, 230)),
             BorderThickness = new Thickness(1), Child = row };
         RenderOptions.SetClearTypeHint((Border)Content, ClearTypeHint.Enabled);
@@ -91,15 +92,15 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
 
     private static Button Button(string tooltip, Action action)
     {
-        var button = new Button { Width = 21, Height = 22, Margin = new Thickness(0.5, 0, 0.5, 0), Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0), Foreground = Brushes.DarkSlateGray, Focusable = false, Padding = new Thickness(2), SnapsToDevicePixels = true, UseLayoutRounding = true, FontSize = 11 };
+        var button = new Button { Width = 25, Height = 26, Margin = new Thickness(0.5, 0, 0.5, 0), Background = Brushes.Transparent,
+            BorderThickness = new Thickness(0), Foreground = Brushes.DarkSlateGray, Focusable = false, Padding = new Thickness(2), SnapsToDevicePixels = true, UseLayoutRounding = true, FontSize = 13 };
         AutomationProperties.SetName(button, tooltip);
         button.Click += (_, _) => action();
         return button;
     }
 
     private static System.Windows.Shapes.Path CreateIcon(string geometry) => new()
-    { Data = Geometry.Parse(geometry), Stroke = Brushes.DarkSlateGray, StrokeThickness = 1, Width = 14, Height = 14, SnapsToDevicePixels = true, Stretch = Stretch.Uniform };
+    { Data = Geometry.Parse(geometry), Stroke = Brushes.DarkSlateGray, StrokeThickness = 1.4, Width = 17, Height = 17, SnapsToDevicePixels = true, Stretch = Stretch.Uniform };
 
     private void CommitSize()
     {
@@ -117,7 +118,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     private void Sync(string? property = null)
     {
         if (property is null or nameof(NoteViewModel.FontSize)) _size.Text = _vm.FontSize.ToString(CultureInfo.CurrentCulture);
-        if (property is null or nameof(NoteViewModel.Color)) _color.Content = new System.Windows.Shapes.Ellipse { Width = 16, Height = 16, Fill = (Brush)new BrushConverter().ConvertFromString(Palette[(int)_vm.Color])!, Stroke = Brushes.SlateGray, StrokeThickness = 0.8 };
+        if (property is null or nameof(NoteViewModel.Color)) _color.Content = new System.Windows.Shapes.Ellipse { Width = 19, Height = 19, Fill = (Brush)new BrushConverter().ConvertFromString(Palette[(int)_vm.Color])!, Stroke = Brushes.SlateGray, StrokeThickness = 0.8 };
         if (property is null or nameof(NoteViewModel.IsBold)) _bold.Background = _vm.IsBold ? Brushes.LightBlue : Brushes.Transparent;
         if (property is null or nameof(NoteViewModel.TextAlignment)) _alignment.Content = AlignmentIcon(_vm.TextAlignment);
         if (property is null or nameof(NoteViewModel.IsPinned)) _pin.Content = CreateIcon(_vm.IsPinned ? "M 5,10 L 5,6 C 5,0 15,0 15,6 L 15,10 M 3,10 L 17,10 L 17,22 L 3,22 Z M 10,14 L 10,18"
@@ -158,7 +159,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         foreach (var color in Enum.GetValues<NoteColor>())
         {
             var button = Button(names[(int)color], () => { _vm.Color = color; popup!.IsOpen = false; });
-            button.Content = new System.Windows.Shapes.Ellipse { Width = 17, Height = 17, Fill = (Brush)new BrushConverter().ConvertFromString(Palette[(int)color])!,
+            button.Content = new System.Windows.Shapes.Ellipse { Width = 20, Height = 20, Fill = (Brush)new BrushConverter().ConvertFromString(Palette[(int)color])!,
                 Stroke = _vm.Color == color ? Brushes.DodgerBlue : Brushes.SlateGray, StrokeThickness = _vm.Color == color ? 2 : 0.8 };
             grid.Children.Add(button);
         }
@@ -196,7 +197,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         foreach (var layer in Enum.GetValues<WindowLayer>())
         {
             var button = Button(names[(int)layer], () => { _vm.Layer = layer; popup!.IsOpen = false; });
-            button.Width = 105; button.Content = names[(int)layer];
+            button.Width = 126; button.Content = names[(int)layer];
             button.Background = _vm.Layer == layer ? Brushes.LightBlue : Brushes.Transparent;
             items.Children.Add(button);
         }
