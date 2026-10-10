@@ -15,7 +15,8 @@ internal static class NoteThemes
         Light("Жёлтый", "#FFF1A8"), Light("Персиковый", "#FFD9BC"), Light("Мятный", "#CFF0D6"),
         Light("Голубой", "#D3E9FC"), Light("Лавандовый", "#E3D9FA"), Light("Розовый", "#FAD8E4"),
         Dark("GitHub", "#0D1117", "#E6EDF3", "#161B22", "#30363D", "#79C0FF", "#484F58", "#21262D", "#30363D"),
-        Dark("Material", "#263238", "#EEFFFF", "#1E272C", "#455A64", "#80CBC4", "#546E7A", "#37474F", "#455A64")
+        Dark("Material", "#263238", "#EEFFFF", "#1E272C", "#455A64", "#80CBC4", "#546E7A", "#37474F", "#455A64"),
+        Dark("Ночная", "#282638", "#F0EDF7", "#211F2C", "#454158", "#C4ACFF", "#655E7A", "#39354B", "#48425F")
     ];
 
     internal static NoteTheme Get(NoteColor color) => Themes[(int)color];

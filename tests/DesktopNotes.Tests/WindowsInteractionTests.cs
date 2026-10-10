@@ -725,7 +725,7 @@ public sealed class WindowsInteractionTests
         try
         {
             host.Show();
-            foreach (var color in new[] { NoteColor.GitHubDark, NoteColor.MaterialDark, NoteColor.Yellow })
+            foreach (var color in new[] { NoteColor.GitHubDark, NoteColor.MaterialDark, NoteColor.MidnightDark, NoteColor.Yellow })
             {
                 vm.Color = color; host.UpdateLayout();
                 var theme = NoteThemes.Get(color);

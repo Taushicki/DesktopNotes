@@ -159,30 +159,24 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     private void OpenPalette()
     {
         var choices = new StackPanel();
-        var grid = new UniformGrid { Columns = 3 };
         Popup? popup = null;
-        foreach (var color in Enum.GetValues<NoteColor>().Where(color => !NoteThemes.Get(color).IsDark))
+        foreach (var dark in new[] { false, true })
         {
-            var theme = NoteThemes.Get(color);
-            var button = Button(theme.Name, () => { _vm.Color = color; popup!.IsOpen = false; });
-            button.Content = new System.Windows.Shapes.Ellipse { Width = 20, Height = 20, Fill = theme.Background,
-                Stroke = _vm.Color == color ? Brushes.DodgerBlue : Brushes.SlateGray, StrokeThickness = _vm.Color == color ? 2 : 0.8 };
-            grid.Children.Add(button);
-        }
-        choices.Children.Add(grid);
-        choices.Children.Add(new Separator());
-        foreach (var color in Enum.GetValues<NoteColor>().Where(color => NoteThemes.Get(color).IsDark))
-        {
-            var theme = NoteThemes.Get(color);
-            var button = Button(theme.Name, () => { _vm.Color = color; popup!.IsOpen = false; });
-            button.Width = 104; button.Height = 28;
-            button.Background = _vm.Color == color ? (Brush)Resources["ToolbarSelectedBrush"] : Brushes.Transparent;
-            var label = new StackPanel { Orientation = Orientation.Horizontal };
-            label.Children.Add(new System.Windows.Shapes.Ellipse { Width = 16, Height = 16, Fill = theme.Background,
-                Stroke = Brushes.SlateGray, StrokeThickness = 0.8, Margin = new Thickness(0, 0, 7, 0) });
-            label.Children.Add(new TextBlock { Text = theme.Name, VerticalAlignment = VerticalAlignment.Center });
-            button.Content = label;
-            choices.Children.Add(button);
+            if (dark) choices.Children.Add(new Separator());
+            var grid = new UniformGrid { Columns = 3 };
+            foreach (var color in Enum.GetValues<NoteColor>().Where(color => NoteThemes.Get(color).IsDark == dark))
+            {
+                var theme = NoteThemes.Get(color);
+                var button = Button(theme.Name, () => { _vm.Color = color; popup!.IsOpen = false; });
+                button.Content = new System.Windows.Shapes.Ellipse
+                {
+                    Width = 20, Height = 20, Fill = theme.Background,
+                    Stroke = _vm.Color == color ? Brushes.DodgerBlue : Brushes.SlateGray,
+                    StrokeThickness = _vm.Color == color ? 2 : 0.8
+                };
+                grid.Children.Add(button);
+            }
+            choices.Children.Add(grid);
         }
         popup = Popup(_color, choices);
     }

@@ -12,6 +12,7 @@ public sealed class StorageTests : IDisposable
     [Theory]
     [InlineData(NoteColor.GitHubDark)]
     [InlineData(NoteColor.MaterialDark)]
+    [InlineData(NoteColor.MidnightDark)]
     public async Task DarkThemeSurvivesSaveAndRestart(NoteColor color)
     {
         var repository = new JsonNoteRepository(_directory);

@@ -1,7 +1,7 @@
 namespace DesktopNotes.Domain;
 
 public enum WindowLayer { Normal, Topmost, Background }
-public enum NoteColor { Yellow, Peach, Mint, Blue, Lavender, Pink, GitHubDark, MaterialDark }
+public enum NoteColor { Yellow, Peach, Mint, Blue, Lavender, Pink, GitHubDark, MaterialDark, MidnightDark }
 public enum NoteTextAlignment { Left, Center, Right, Justify }
 public enum NoteVerticalAlignment { Top, Center, Bottom }
 
