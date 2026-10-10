@@ -34,7 +34,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 
     internal LiveMarkdownEditor()
     {
-        Background = Brushes.Transparent; BorderThickness = new Thickness(0); Padding = new Thickness(4);
+        Background = Brushes.Transparent; BorderThickness = new Thickness(0); Padding = new Thickness(6);
         FontFamily = new FontFamily("Segoe UI"); FontSize = 14;
         WordWrap = true; ShowLineNumbers = false;
         VerticalScrollBarVisibility = ScrollBarVisibility.Hidden; HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;

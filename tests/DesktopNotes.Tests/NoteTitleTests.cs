@@ -1,5 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using DesktopNotes.Application;
 using DesktopNotes.Domain;
 using DesktopNotes.Presentation;
@@ -75,6 +77,19 @@ public sealed class NoteTitleTests
             var titleArea = Assert.IsType<Border>(header.Children[0]);
             var title = Assert.IsType<TextBlock>(titleArea.Child);
             Assert.Equal(Visibility.Collapsed, title.Visibility);
+            var editor = window.MarkdownEditor;
+            Assert.InRange(editor.TextArea.TextView.TranslatePoint(new Point(0, 0), window).Y, 10, 20);
+            var headingPoint = editor.TextArea.TextView.TranslatePoint(new Point(20, 10), window);
+            var hit = window.InputHitTest(headingPoint) as DependencyObject;
+            while (hit is not null && hit != editor) hit = VisualTreeHelper.GetParent(hit);
+            Assert.Same(editor, hit); // Overlay must not block editing the first heading.
+            if (Environment.GetEnvironmentVariable("DESKTOPNOTES_TEST_RENDER_DIR") is { } directory)
+            {
+                Directory.CreateDirectory(directory);
+                var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32); bitmap.Render(window);
+                var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                using var file = File.Create(Path.Combine(directory, "note-insets.png")); encoder.Save(file);
+            }
             Assert.Equal("# Новая заметка\n\n", window.MarkdownEditor.Text);
             window.MarkdownEditor.Document.Replace(2, "Новая заметка".Length, "Работа");
             Assert.Equal("Работа", vm.Title); Assert.Equal("Работа", window.Title);
@@ -84,6 +99,8 @@ public sealed class NoteTitleTests
             window.MarkdownEditor.Undo(); Assert.Equal("Новая заметка", title.Text);
             vm.ToggleCollapsed.Execute(null); Assert.Equal(Visibility.Collapsed, title.Visibility);
             Assert.Equal(280, window.Height);
+            window.UpdateLayout();
+            Assert.InRange(editor.TextArea.TextView.TranslatePoint(new Point(0, 0), window).Y, 10, 20);
         }
         finally { window.ClosePermanently(); }
     });

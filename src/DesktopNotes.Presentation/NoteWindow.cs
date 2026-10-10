@@ -18,6 +18,8 @@ public sealed class NoteWindow : Window
     private readonly NoteViewModel _vm;
     private readonly IWindowLayerController _layers;
     private readonly Grid _body = new();
+    private readonly Grid _root = new() { Margin = new Thickness(7.5) };
+    private readonly RowDefinition _captionRow = new() { Height = new GridLength(0) };
     private readonly LiveMarkdownEditor _editor;
     private readonly Border _titleArea;
     private readonly TextBlock _titleLabel;
@@ -68,15 +70,18 @@ public sealed class NoteWindow : Window
         ContextMenu.Opened += (_, _) => PopulateMenu(ContextMenu);
         WindowChrome.SetWindowChrome(this, new WindowChrome { CaptionHeight = 0, ResizeBorderThickness = new Thickness(5), GlassFrameThickness = new Thickness(0), CornerRadius = new CornerRadius(0) });
 
-        var root = new Grid { Margin = new Thickness(5) };
-        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(34) });
+        var root = _root;
+        root.RowDefinitions.Add(_captionRow);
         root.RowDefinitions.Add(new RowDefinition());
-        var header = new Grid { Background = Brushes.Transparent };
+        var header = new Grid { Height = 34, VerticalAlignment = VerticalAlignment.Top };
+        Grid.SetRowSpan(header, 2);
+        Panel.SetZIndex(header, 1);
         header.ColumnDefinitions.Add(new ColumnDefinition());
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         _titleArea = new Border
         {
             Background = Brushes.Transparent, Padding = new Thickness(8, 0, 4, 0), Focusable = true,
+            Height = 6, VerticalAlignment = VerticalAlignment.Top,
             Cursor = System.Windows.Input.Cursors.SizeAll
         };
         _titleLabel = new TextBlock { Name = "CollapsedTitle", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
@@ -111,6 +116,8 @@ public sealed class NoteWindow : Window
         };
         _editor.ContentGeometryChanged += UpdateEditorHeight;
         _body.Children.Add(_editor);
+        // Keep editable text clear of the collapse control without a blank caption row.
+        _body.Margin = new Thickness(0, 0, 28, 0);
         Grid.SetRow(_body, 1); root.Children.Add(_body);
         var shell = new Grid();
         shell.Children.Add(root);
@@ -246,6 +253,9 @@ public sealed class NoteWindow : Window
             Background = (Brush)new BrushConverter().ConvertFromString(NoteFormattingToolbar.Palette[(int)_vm.Color])!;
             _body.Visibility = _vm.IsCollapsed ? Visibility.Collapsed : Visibility.Visible;
             _titleLabel.Visibility = _vm.IsCollapsed ? Visibility.Visible : Visibility.Collapsed;
+            _captionRow.Height = new GridLength(_vm.IsCollapsed ? 34 : 0);
+            _titleArea.Height = _vm.IsCollapsed ? 34 : 6;
+            _root.Margin = new Thickness(_vm.IsCollapsed ? 5 : 7.5);
             MinHeight = _vm.IsCollapsed ? 44 : 140;
             Height = _vm.IsCollapsed ? 44 : _vm.Snapshot.Height;
             ResizeMode = _vm.IsCollapsed ? ResizeMode.NoResize : ResizeMode.CanResize;
