@@ -324,14 +324,11 @@ public sealed class LiveEditorTests
     });
 
     [Fact]
-    public Task InlineEditsPreserveUndoAndStableInternalLinkIds() => OnSta(() =>
+    public Task InlineEditsPreserveUndoAndRedo() => OnSta(() =>
     {
         using var editor = new LiveMarkdownEditor() { Text = "before word after" };
         editor.Select(7, 4); editor.ToggleBoldSelection(); Assert.Equal("before **word** after", editor.Text);
         editor.Undo(); Assert.Equal("before word after", editor.Text); editor.Redo(); Assert.Equal("before **word** after", editor.Text);
-        editor.Select(0, 0); var id = Guid.NewGuid(); editor.InsertNoteLink(id, "Title");
-        Assert.StartsWith($"[[{id}|Title]]", editor.Text);
-        editor.Undo(); Assert.Equal("before **word** after", editor.Text);
     });
 
     private static Task OnSta(Action action)

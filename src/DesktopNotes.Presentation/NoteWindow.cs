@@ -201,30 +201,23 @@ public sealed class NoteWindow : Window
     internal Action? SaveRequested { get; set; }
     internal bool HandleWindowShortcut(System.Windows.Input.Key key, System.Windows.Input.ModifierKeys modifiers)
     {
+        if (key == System.Windows.Input.Key.Delete && modifiers == System.Windows.Input.ModifierKeys.None &&
+            IsConnectionSelected && !_editor.IsKeyboardFocusWithin)
+        { _vm.Delete.Execute(null); return true; }
         if (modifiers != System.Windows.Input.ModifierKeys.Control) return false;
         if (key == System.Windows.Input.Key.N && NewNoteRequested is not null) { NewNoteRequested(); return true; }
         if (key == System.Windows.Input.Key.S && SaveRequested is not null) { SaveBounds(); SaveRequested(); return true; }
         if (key == System.Windows.Input.Key.W) { HideNote(); return true; }
         return false;
     }
-    internal void InsertNoteLink(Guid id, string title) => _editor.InsertNoteLink(id, title);
 
     private void PopulateMenu(ContextMenu menu)
     {
         menu.Items.Clear();
-        var layers = new MenuItem { Header = "Расположение" };
-        string[] layerNames = ["Обычный", "Поверх окон", "На задний план"];
-        foreach (var layer in Enum.GetValues<WindowLayer>())
-        {
-            var item = new MenuItem { Header = layerNames[(int)layer], IsCheckable = true, IsChecked = _vm.Layer == layer };
-            item.Click += (_, _) => _vm.Layer = layer; layers.Items.Add(item);
-        }
-        menu.Items.Add(layers);
         _editor?.AppendFormattingMenu(menu);
         PopulateBoardMenu?.Invoke(this, menu);
         menu.Items.Add(new Separator());
         menu.Items.Add(new MenuItem { Header = "Скрыть", Command = _vm.Hide });
-        menu.Items.Add(new MenuItem { Header = "Удалить…", Command = _vm.Delete });
     }
 
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs args)

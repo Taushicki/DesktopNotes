@@ -96,7 +96,7 @@ public sealed class WindowsInteractionTests
             Assert.True(host.IsConnectionSelected);
             var row = Assert.IsType<StackPanel>(Assert.IsType<Border>(toolbar.Content).Child);
             Assert.IsType<Button>(row.Children[2]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Assert.IsType<ComboBox>(row.Children[1]).SelectedItem = 20d;
+            toolbar.FontSizeInput.Text = "20"; toolbar.FontSizeInput.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, 0, toolbar.FontSizeInput, null) { RoutedEvent = UIElement.LostKeyboardFocusEvent });
             Assert.IsType<Button>(row.Children[4]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.True(notes.Get(note.Id).IsBold); Assert.True(notes.Get(note.Id).IsPinned); Assert.Equal(20, notes.Get(note.Id).FontSize);
             board.ReconcileInteractionFocus(host, hwnd);
@@ -140,15 +140,15 @@ public sealed class WindowsInteractionTests
         {
             var surface = Assert.IsType<Border>(toolbar.Content);
             var row = Assert.IsType<StackPanel>(surface.Child);
-            Assert.Equal(5, row.Children.Count);
-            Assert.IsType<ComboBox>(row.Children[1]).SelectedItem = 24d;
+            Assert.Equal(6, row.Children.Count);
+            toolbar.FontSizeInput.Text = "24"; toolbar.FontSizeInput.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, 0, toolbar.FontSizeInput, null) { RoutedEvent = UIElement.LostKeyboardFocusEvent });
             Assert.IsType<Button>(row.Children[2]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.IsType<Button>(row.Children[4]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             var saved = notes.Get(note.Id);
             Assert.Equal(24, saved.FontSize); Assert.True(saved.IsBold); Assert.True(saved.IsPinned);
             Assert.Equal("# Heading\n\n**bold** text", saved.Markdown);
-            surface.Measure(new Size(272, 56)); surface.Arrange(new Rect(0, 0, 272, 56));
-            var bitmap = new RenderTargetBitmap(272, 56, 96, 96, PixelFormats.Pbgra32); bitmap.Render(surface);
+            surface.Measure(new Size(toolbar.Width, toolbar.Height)); surface.Arrange(new Rect(0, 0, toolbar.Width, toolbar.Height));
+            var bitmap = new RenderTargetBitmap((int)Math.Ceiling(toolbar.Width), (int)Math.Ceiling(toolbar.Height), 96, 96, PixelFormats.Pbgra32); bitmap.Render(surface);
             if (Environment.GetEnvironmentVariable("DESKTOPNOTES_TEST_RENDER_DIR") is { } directory)
             {
                 Directory.CreateDirectory(directory); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
@@ -516,6 +516,83 @@ public sealed class WindowsInteractionTests
             foreach (var window in windows) window.ClosePermanently();
             foreach (var model in models) model.Dispose();
         }
+    });
+
+    [Fact]
+    public Task DeleteOnlyRemovesSelectedNoteOutsideTextEditing() => OnStaThread(() =>
+    {
+        var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
+        var deletions = 0;
+        using var vm = new NoteViewModel(note, notes, () => { }, () => deletions++);
+        var host = new NoteWindow(vm, new Layers());
+        try
+        {
+            host.Show(); host.UpdateLayout();
+            Assert.False(host.HandleWindowShortcut(System.Windows.Input.Key.Delete, System.Windows.Input.ModifierKeys.None));
+            host.SetConnectionState(true, false);
+            System.Windows.Input.Keyboard.Focus(host.MarkdownEditor.TextArea);
+            Assert.True(host.MarkdownEditor.IsKeyboardFocusWithin);
+            Assert.False(host.HandleWindowShortcut(System.Windows.Input.Key.Delete, System.Windows.Input.ModifierKeys.None));
+            Assert.Equal(0, deletions);
+            vm.ToggleCollapsed.Execute(null); host.UpdateLayout();
+            System.Windows.Input.Keyboard.Focus(host);
+            Assert.True(host.HandleWindowShortcut(System.Windows.Input.Key.Delete, System.Windows.Input.ModifierKeys.None));
+            Assert.Equal(1, deletions);
+            Assert.False(host.HandleWindowShortcut(System.Windows.Input.Key.Delete, System.Windows.Input.ModifierKeys.Control));
+            Assert.DoesNotContain(host.ContextMenu.Items.OfType<MenuItem>(), item => (string?)item.Header is "Удалить…" or "Расположение");
+        }
+        finally { host.ClosePermanently(); }
+    });
+
+    [Fact]
+    public Task CompactToolbarSizeInputStepsClampAndRejectInvalidValues() => OnStaThread(() =>
+    {
+        var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
+        using var vm = new NoteViewModel(note, notes, () => { }, () => { });
+        var host = new NoteWindow(vm, new Layers());
+        try
+        {
+            var toolbar = host.FormattingToolbar;
+            Assert.Equal(272 * 0.7, toolbar.Width, 2); Assert.Equal(56 * 0.7, toolbar.Height, 2);
+            Assert.Equal(0, toolbar.FontSizeInput.BorderThickness.Left);
+            var row = (StackPanel)((Border)toolbar.Content).Child;
+            var size = (StackPanel)row.Children[1]; var arrows = (StackPanel)size.Children[1];
+            void Step(int index) => ((Button)arrows.Children[index]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            toolbar.FontSizeInput.Text = "20"; Step(0); Assert.Equal(21, vm.FontSize);
+            Step(1); Assert.Equal(20, vm.FontSize);
+            toolbar.FontSizeInput.Text = "72"; Step(0); Assert.Equal(72, vm.FontSize);
+            toolbar.FontSizeInput.Text = "8"; Step(1); Assert.Equal(8, vm.FontSize);
+            toolbar.FontSizeInput.Text = "invalid"; Step(0); Assert.Equal(9, vm.FontSize);
+            Assert.Equal("9", toolbar.FontSizeInput.Text);
+        }
+        finally { host.ClosePermanently(); }
+    });
+
+    [Fact]
+    public Task LayerPopupUpdatesWindowAndRemovedBoardMenuEntriesStayAbsent() => OnStaThread(() =>
+    {
+        var notes = new NoteService(new Repository()); var a = notes.Create(100, 100); var b = notes.Create(500, 100);
+        notes.AddLink(a.Id, b.Id);
+        using var vm = new NoteViewModel(a, notes, () => { }, () => { });
+        var host = new NoteWindow(vm, new Layers());
+        using var clicks = new DesktopClickObserver();
+        using var board = new BoardInteractionController(notes, new GroupSelectionSession(notes), clicks, _ => host, Dispatcher.CurrentDispatcher);
+        board.Attach(host);
+        try
+        {
+            host.Show(); host.UpdateLayout(); host.ConnectionClicked!(host);
+            host.PopulateBoardMenu!(host, host.ContextMenu);
+            Assert.DoesNotContain(host.ContextMenu.Items.OfType<MenuItem>(), item => (string?)item.Header is "Вставить ссылку на заметку" or "Удалить связь" or "Расположение" or "Удалить…");
+            var toolbar = host.FormattingToolbar;
+            var row = (StackPanel)((Border)toolbar.Content).Child;
+            ((Button)row.Children[5]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var popups = typeof(NoteFormattingToolbar).GetField("_popups", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+            var popup = Assert.Single((List<System.Windows.Controls.Primitives.Popup>)popups.GetValue(toolbar)!);
+            var items = (StackPanel)((Border)popup.Child).Child;
+            ((Button)items.Children[1]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(WindowLayer.Topmost, vm.Layer); Assert.True(host.Topmost); Assert.False(popup.IsOpen);
+        }
+        finally { host.ClosePermanently(); }
     });
 
     private static Task OnStaThread(Action action)

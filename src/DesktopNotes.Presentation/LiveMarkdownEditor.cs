@@ -297,12 +297,6 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         if (edit is not null) { ApplyEdit(edit); e.Handled = true; }
     }
 
-    internal void InsertNoteLink(Guid id, string title)
-    {
-        var label = title.Replace("|", " ").Replace("]", "");
-        ApplyEdit(new(SelectionStart, SelectionLength, $"[[{id}|{label}]]", 0, label.Length + 41));
-    }
-
     private void OnKey(object sender, KeyEventArgs e)
     {
         if (HandleShortcut(e.Key == Key.System ? e.SystemKey : e.Key, Keyboard.Modifiers)) e.Handled = true;

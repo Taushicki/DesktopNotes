@@ -86,7 +86,7 @@ public sealed class OptimizationTests
         {
             var row = Assert.IsType<StackPanel>(Assert.IsType<Border>(window.FormattingToolbar.Content).Child);
             var color = Assert.IsType<Button>(row.Children[0]); var originalColor = color.Content;
-            var size = Assert.IsType<ComboBox>(row.Children[1]); size.Text = "2";
+            var size = window.FormattingToolbar.FontSizeInput; size.Text = "2";
             var events = new List<string?>(); vm.PropertyChanged += (_, e) => events.Add(e.PropertyName);
             vm.Markdown = "# Заголовок\n\nТекст";
             Assert.Equal(1, events.Count(name => name == nameof(NoteViewModel.Markdown)));

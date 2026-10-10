@@ -20,10 +20,14 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     private readonly NoteWindow _host;
     private readonly NoteViewModel _vm;
     private readonly DispatcherTimer _timer;
-    private readonly ComboBox _size;
-    private readonly Button _color, _bold, _alignment, _pin;
+    private readonly TextBox _size;
+    internal TextBox FontSizeInput => _size;
+    internal const double ToolbarScale = 0.7;
+    internal const double ToolbarWidth = 272 * ToolbarScale;
+    internal const double ToolbarHeight = 56 * ToolbarScale;
+    private readonly Button _color, _bold, _alignment, _pin, _layer;
     private readonly List<Popup> _popups = [];
-    private bool _selected, _disposed, _updating;
+    private bool _selected, _disposed;
 
     internal NoteFormattingToolbar(NoteWindow host, NoteViewModel vm)
     {
@@ -31,17 +35,32 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         ShowInTaskbar = false; ShowActivated = false;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
         AllowsTransparency = true; Background = Brushes.Transparent;
-        Width = 272; Height = 56;
+        Width = ToolbarWidth; Height = ToolbarHeight;
         var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
         _color = Button("Цвет заметки", () => OpenPalette());
         row.Children.Add(_color);
-        _size = new ComboBox { Width = 66, Height = 30, IsEditable = true, FontSize = 15, VerticalContentAlignment = VerticalAlignment.Center,
-            ItemsSource = new double[] { 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72 } };
+        _size = new TextBox { Width = 36, Height = 30, FontSize = 15, BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent, VerticalContentAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center, Padding = new Thickness(0) };
         AutomationProperties.SetName(_size, "Размер шрифта");
-        _size.SelectionChanged += (_, _) => { if (!_updating && _size.SelectedItem is double value) _vm.FontSize = value; };
         _size.LostKeyboardFocus += (_, _) => CommitSize();
-        _size.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Enter) { CommitSize(); e.Handled = true; } };
-        row.Children.Add(_size);
+        _size.KeyDown += (_, e) =>
+        {
+            if (e.Key == System.Windows.Input.Key.Enter) { CommitSize(); e.Handled = true; }
+            if (e.Key is System.Windows.Input.Key.Up or System.Windows.Input.Key.Down)
+            { ChangeSize(e.Key == System.Windows.Input.Key.Up ? 1 : -1); e.Handled = true; }
+        };
+        var size = new StackPanel { Orientation = Orientation.Horizontal, Width = 54, VerticalAlignment = VerticalAlignment.Center };
+        size.Children.Add(_size);
+        var arrows = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+        foreach (var delta in new[] { 1, -1 })
+        {
+            var step = Button(delta > 0 ? "Увеличить размер шрифта" : "Уменьшить размер шрифта", () => ChangeSize(delta));
+            step.Width = 14; step.Height = 14; step.Margin = new Thickness(0); step.Padding = new Thickness(2);
+            step.Content = CreateIcon(delta > 0 ? "M 0,4 L 4,0 L 8,4" : "M 0,0 L 4,4 L 8,0");
+            ((System.Windows.Shapes.Path)step.Content).Width = 8; ((System.Windows.Shapes.Path)step.Content).Height = 4;
+            arrows.Children.Add(step);
+        }
+        size.Children.Add(arrows); row.Children.Add(size);
         _bold = Button("Жирный шрифт", _host.ToggleBoldFormatting);
         _bold.Content = new TextBlock { Text = "B", FontWeight = FontWeights.Bold, FontStyle = FontStyles.Italic, FontSize = 19 };
         row.Children.Add(_bold);
@@ -49,7 +68,9 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         row.Children.Add(_alignment);
         _pin = Button("Закрепить положение заметки", () => _vm.IsPinned = !_vm.IsPinned);
         row.Children.Add(_pin);
-        Content = new Border { Margin = new Thickness(5), Padding = new Thickness(4, 0, 4, 0), CornerRadius = new CornerRadius(10),
+        _layer = Button("Расположение окон", OpenLayers);
+        row.Children.Add(_layer);
+        Content = new Border { LayoutTransform = new ScaleTransform(ToolbarScale, ToolbarScale), Margin = new Thickness(5), Padding = new Thickness(4, 0, 4, 0), CornerRadius = new CornerRadius(10),
             Background = new SolidColorBrush(Color.FromRgb(252, 253, 255)), BorderBrush = new SolidColorBrush(Color.FromRgb(210, 219, 230)),
             BorderThickness = new Thickness(1), Child = row, Effect = new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.16 } };
         SourceInitialized += (_, _) => StickerWindowStyle.HideFromWindowSwitcher(new WindowInteropHelper(this).Handle);
@@ -63,7 +84,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
 
     private static Button Button(string tooltip, Action action)
     {
-        var button = new Button { Width = 43, Height = 32, Margin = new Thickness(1, 0, 1, 0), Background = Brushes.Transparent,
+        var button = new Button { Width = 36, Height = 32, Margin = new Thickness(1, 0, 1, 0), Background = Brushes.Transparent,
             BorderThickness = new Thickness(0), Foreground = Brushes.DarkSlateGray, Focusable = false, Padding = new Thickness(4) };
         AutomationProperties.SetName(button, tooltip);
         button.Click += (_, _) => action();
@@ -77,21 +98,31 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     {
         if (double.TryParse(_size.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out var value) && double.IsFinite(value) && value is >= 8 and <= 72)
             _vm.FontSize = value;
-        Sync();
+        Sync(nameof(NoteViewModel.FontSize));
+    }
+
+    private void ChangeSize(int delta)
+    {
+        CommitSize();
+        _vm.FontSize = Math.Clamp(_vm.FontSize + delta, 8, 72);
     }
 
     private void Sync(string? property = null)
     {
-        _updating = true;
         if (property is null or nameof(NoteViewModel.FontSize)) _size.Text = _vm.FontSize.ToString(CultureInfo.CurrentCulture);
         if (property is null or nameof(NoteViewModel.Color)) _color.Content = new System.Windows.Shapes.Ellipse { Width = 23, Height = 23, Fill = (Brush)new BrushConverter().ConvertFromString(Palette[(int)_vm.Color])!, Stroke = Brushes.SlateGray, StrokeThickness = 0.8 };
         if (property is null or nameof(NoteViewModel.IsBold)) _bold.Background = _vm.IsBold ? Brushes.LightBlue : Brushes.Transparent;
         if (property is null or nameof(NoteViewModel.TextAlignment)) _alignment.Content = AlignmentIcon(_vm.TextAlignment);
         if (property is null or nameof(NoteViewModel.IsPinned)) _pin.Content = CreateIcon(_vm.IsPinned ? "M 5,10 L 5,6 C 5,0 15,0 15,6 L 15,10 M 3,10 L 17,10 L 17,22 L 3,22 Z M 10,14 L 10,18"
             : "M 5,10 L 5,6 C 5,0 15,0 15,6 M 3,10 L 17,10 L 17,22 L 3,22 Z M 10,14 L 10,18");
+        if (property is null or nameof(NoteViewModel.Layer)) _layer.Content = CreateIcon(_vm.Layer switch
+        {
+            WindowLayer.Topmost => "M 2,8 L 10,3 L 18,8 L 10,13 Z M 2,12 L 10,17 L 18,12 M 10,0 L 10,5 M 7,3 L 10,0 L 13,3",
+            WindowLayer.Background => "M 2,3 L 10,8 L 18,3 M 2,7 L 10,12 L 18,7 M 2,11 L 10,16 L 18,11 M 10,16 L 10,21 M 7,18 L 10,21 L 13,18",
+            _ => "M 2,5 L 10,0 L 18,5 L 10,10 Z M 2,9 L 10,14 L 18,9 M 2,13 L 10,18 L 18,13"
+        });
         if (property is null or nameof(NoteViewModel.IsPinned)) _pin.Background = _vm.IsPinned ? Brushes.LightBlue : Brushes.Transparent;
         if (property is null or nameof(NoteViewModel.IsPinned)) AutomationProperties.SetName(_pin, _vm.IsPinned ? "Открепить положение заметки" : "Закрепить положение заметки");
-        _updating = false;
     }
 
     private static System.Windows.Shapes.Path AlignmentIcon(NoteTextAlignment alignment) => CreateIcon(alignment switch
@@ -105,7 +136,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     private Popup Popup(Button target, UIElement content)
     {
         var popup = new Popup { PlacementTarget = target, Placement = PlacementMode.Bottom, StaysOpen = false, AllowsTransparency = true,
-            Child = new Border { Background = Brushes.White, BorderBrush = Brushes.LightSlateGray, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(8), Child = content } };
+            Child = new Border { LayoutTransform = new ScaleTransform(ToolbarScale, ToolbarScale), Background = Brushes.White, BorderBrush = Brushes.LightSlateGray, BorderThickness = new Thickness(1), CornerRadius = new CornerRadius(8), Padding = new Thickness(8), Child = content } };
         _popups.Add(popup); popup.Closed += (_, _) => _popups.Remove(popup); popup.IsOpen = true;
         return popup;
     }
@@ -149,6 +180,20 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         popup = Popup(_alignment, rows);
     }
 
+    private void OpenLayers()
+    {
+        var items = new StackPanel(); Popup? popup = null;
+        string[] names = ["Обычный", "Поверх окон", "На задний план"];
+        foreach (var layer in Enum.GetValues<WindowLayer>())
+        {
+            var button = Button(names[(int)layer], () => { _vm.Layer = layer; popup!.IsOpen = false; });
+            button.Width = 150; button.Content = names[(int)layer];
+            button.Background = _vm.Layer == layer ? Brushes.LightBlue : Brushes.Transparent;
+            items.Children.Add(button);
+        }
+        popup = Popup(_layer, items);
+    }
+
     internal void SetSelected(bool selected) { _selected = selected; Refresh(); }
     internal bool OwnsWindow(nint handle)
     {
@@ -157,12 +202,12 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         if (ownHandle != 0 && (handle == ownHandle || NativeWindows.RootOwner(handle) == ownHandle)) return true;
         bool IsPopup(Popup popup) => popup.IsOpen && popup.Child is { } child &&
             PresentationSource.FromVisual(child) is HwndSource source && source.Handle == handle;
-        return _popups.Any(IsPopup) || (_size.Template?.FindName("PART_Popup", _size) is Popup sizePopup && IsPopup(sizePopup));
+        return _popups.Any(IsPopup);
     }
 
     internal static ScreenRect CalculateBounds(ScreenRect note, ScreenRect area, double scale)
     {
-        var width = (int)Math.Round(272 * scale); var height = (int)Math.Round(56 * scale);
+        var width = (int)Math.Round(ToolbarWidth * scale); var height = (int)Math.Round(ToolbarHeight * scale);
         var centered = (int)Math.Round(note.Left + (note.Width - width) / 2.0);
         var x = Math.Clamp(centered, area.Left, Math.Max(area.Left, area.Right - width));
         var y = note.Top - height - (int)Math.Round(5 * scale);
@@ -188,7 +233,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     }
     private void Changed(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName is nameof(NoteViewModel.Color) or nameof(NoteViewModel.FontSize) or nameof(NoteViewModel.IsBold) or nameof(NoteViewModel.TextAlignment) or nameof(NoteViewModel.IsPinned)) Sync(args.PropertyName);
+        if (args.PropertyName is nameof(NoteViewModel.Color) or nameof(NoteViewModel.FontSize) or nameof(NoteViewModel.IsBold) or nameof(NoteViewModel.TextAlignment) or nameof(NoteViewModel.IsPinned) or nameof(NoteViewModel.Layer)) Sync(args.PropertyName);
         if (args.PropertyName is nameof(NoteViewModel.IsCollapsed) or nameof(NoteViewModel.Layer)) Refresh();
     }
     private void GeometryChanged(object? sender, EventArgs args) => Refresh();

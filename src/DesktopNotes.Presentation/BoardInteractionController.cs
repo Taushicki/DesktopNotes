@@ -190,14 +190,6 @@ internal sealed class BoardInteractionController : IDisposable
 
     private void PopulateMenu(NoteWindow window, ContextMenu menu)
     {
-        var insertLink = new MenuItem { Header = "Вставить ссылку на заметку" };
-        foreach (var note in _notes.Notes.Where(note => note.Id != window.NoteId))
-        {
-            var item = new MenuItem { Header = string.IsNullOrWhiteSpace(note.Title) ? "Без названия" : note.Title };
-            item.Click += (_, _) => window.InsertNoteLink(note.Id, note.Title);
-            insertLink.Items.Add(item);
-        }
-        insertLink.IsEnabled = insertLink.Items.Count > 0; menu.Items.Add(insertLink);
         var group = _notes.GroupOf(window.NoteId);
         if (group is not null)
         {
@@ -213,21 +205,6 @@ internal sealed class BoardInteractionController : IDisposable
             dissolve.Click += (_, _) => _notes.SetGroupMembers(group.Id, []);
             menu.Items.Add(dissolve);
             if (!CanMove(window.NoteId)) menu.Items.Add(new MenuItem { Header = "Группа не двигается: участник закреплён", IsEnabled = false });
-        }
-        var links = _notes.Links.Where(link => link.SourceId == window.NoteId || link.TargetId == window.NoteId).ToArray();
-        if (links.Length > 0)
-        {
-            var submenu = new MenuItem { Header = "Удалить связь" };
-            foreach (var link in links)
-            {
-                var outgoing = link.SourceId == window.NoteId;
-                var target = _notes.Get(outgoing ? link.TargetId : link.SourceId);
-                var title = string.IsNullOrWhiteSpace(target.Title) ? "Без названия" : target.Title;
-                var item = new MenuItem { Header = (outgoing ? "→ " : "← ") + title };
-                item.Click += (_, _) => _notes.RemoveLink(link.Id);
-                submenu.Items.Add(item);
-            }
-            menu.Items.Add(submenu);
         }
     }
 
