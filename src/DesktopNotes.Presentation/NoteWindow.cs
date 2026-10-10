@@ -23,6 +23,7 @@ public sealed class NoteWindow : Window
     private readonly LiveMarkdownEditor _editor;
     private readonly Border _titleArea;
     private readonly TextBlock _titleLabel;
+    private readonly System.Windows.Shapes.Path _collapseIcon;
     private readonly Border _frame = new() { BorderThickness = new Thickness(2), IsHitTestVisible = false };
     private readonly EdgeLinkHandles _linkHandles;
     private readonly NoteFormattingToolbar _formatting;
@@ -86,7 +87,7 @@ public sealed class NoteWindow : Window
             Height = 6, VerticalAlignment = VerticalAlignment.Top,
             Cursor = System.Windows.Input.Cursors.SizeAll
         };
-        _titleLabel = new TextBlock { Name = "CollapsedTitle", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
+        _titleLabel = new TextBlock { Name = "CollapsedTitle", FontSize = 18, FontWeight = FontWeights.Bold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
             Visibility = vm.IsCollapsed ? Visibility.Visible : Visibility.Collapsed };
         _titleLabel.SetBinding(TextBlock.TextProperty, new Binding(nameof(vm.Title)));
         _titleArea.Child = _titleLabel;
@@ -100,13 +101,16 @@ public sealed class NoteWindow : Window
         };
         header.Children.Add(_titleArea);
         var collapse = MakeButton("Свернуть / развернуть");
-        collapse.Content = new System.Windows.Shapes.Rectangle
+        _collapseIcon = new System.Windows.Shapes.Path
         {
-            Width = 10, Height = 1.5, Fill = Brushes.DarkSlateGray,
+            Width = 12, Height = 6, Stroke = Brushes.DarkSlateGray, StrokeThickness = 1.8,
+            StrokeStartLineCap = PenLineCap.Round, StrokeEndLineCap = PenLineCap.Round, StrokeLineJoin = PenLineJoin.Round,
+            Stretch = Stretch.Uniform,
             HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center
         };
+        collapse.Content = _collapseIcon;
         collapse.Command = vm.ToggleCollapsed;
-        collapse.VerticalAlignment = VerticalAlignment.Top;
+        collapse.VerticalAlignment = VerticalAlignment.Center;
         collapse.Height = 28;
         collapse.Width = 28;
         collapse.Padding = new Thickness(0);
@@ -201,7 +205,7 @@ public sealed class NoteWindow : Window
     {
         var button = new Button
         {
-            Style = (Style)Resources["ToolbarButton"], Background = (Brush)Resources["ToolbarSelectedBrush"],
+            Style = (Style)Resources["ToolbarButton"], Background = Brushes.Transparent,
             BorderThickness = new Thickness(0), MinWidth = 28, Focusable = false,
             UseLayoutRounding = true, SnapsToDevicePixels = true
         };
@@ -316,6 +320,7 @@ public sealed class NoteWindow : Window
             _editor.SetScrollBarColor(((SolidColorBrush)Background).Color);
             _body.Visibility = _vm.IsCollapsed ? Visibility.Collapsed : Visibility.Visible;
             _titleLabel.Visibility = _vm.IsCollapsed ? Visibility.Visible : Visibility.Collapsed;
+            _collapseIcon.Data = Geometry.Parse(_vm.IsCollapsed ? "M 0,0 L 6,6 L 12,0" : "M 0,6 L 6,0 L 12,6");
             _captionRow.Height = new GridLength(_vm.IsCollapsed ? 34 : 0);
             _titleArea.Height = _vm.IsCollapsed ? 34 : 6;
             _root.Margin = new Thickness(_vm.IsCollapsed ? 5 : 7.5);
