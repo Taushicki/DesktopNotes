@@ -48,6 +48,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.TextView.ElementGenerators.Add(new AlignmentGenerator(this));
         _generator = new InlineGenerator(this); TextArea.TextView.ElementGenerators.Add(_generator);
         TextArea.TextView.LineTransformers.Add(new InlineStyling(this));
+        TextArea.TextView.BackgroundRenderers.Add(new CodeBlockBackground(this));
         TextChanged += OnTextChanged;
         SizeChanged += (_, _) => TextArea.TextView.Redraw();
         TextArea.TextView.VisualLinesChanged += (_, _) => ContentGeometryChanged?.Invoke();
@@ -236,6 +237,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             }
             if (key == Key.Z) { Document.UndoStack.Redo(); return true; }
         }
+        if (key == Key.Enter && modifiers == ModifierKeys.None && SelectionLength == 0 && TryCreateFencedCodeBlock()) return true;
         if (key == Key.Enter && modifiers == ModifierKeys.None && SelectionLength == 0 &&
             !_blocks.Any(block => block.IsCode && CaretOffset >= block.Start && CaretOffset <= block.Start + block.Length))
         { ApplyEdit(MarkdownEditingCommands.ContinueLine(Text, CaretOffset)); return true; }
@@ -251,6 +253,18 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             return true;
         }
         return false;
+    }
+
+    private bool TryCreateFencedCodeBlock()
+    {
+        var line = Document.GetLineByOffset(CaretOffset);
+        if (CaretOffset != line.EndOffset || !Layout.CodeFrames.Any(frame => frame.Start == line.Offset && !frame.HasClosingFence)) return false;
+        var match = Regex.Match(Document.GetText(line), @"^(?<indent> {0,3})(?<fence>`{3,}|~{3,})(?<info>[^\r\n]*)$");
+        if (!match.Success) return false;
+        var newline = Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var indent = match.Groups["indent"].Value;
+        ApplyEdit(new(CaretOffset, 0, newline + indent + newline + indent + match.Groups["fence"].Value, newline.Length + indent.Length, 0));
+        return true;
     }
 
     private int WordBoundary(bool forward)
@@ -406,12 +420,18 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         }
         public override int GetFirstInterestedOffset(int startOffset)
         {
+            var line = CurrentContext.VisualLine.FirstDocumentLine;
+            if (editor.Layout.CodeFrames.Any(frame => line.Offset >= frame.Start && line.Offset < frame.End))
+                return startOffset <= line.Offset ? line.Offset : -1;
             if (editor._appearance.TextAlignment == NoteTextAlignment.Justify) return _spaces.FirstOrDefault(part => part.Start >= startOffset)?.Start ?? -1;
             var start = CurrentContext.VisualLine.FirstDocumentLine.Offset;
             return editor._appearance.TextAlignment is NoteTextAlignment.Center or NoteTextAlignment.Right && startOffset <= start ? start : -1;
         }
         public override VisualLineElement? ConstructElement(int offset)
         {
+            var codeLine = CurrentContext.VisualLine.FirstDocumentLine;
+            if (editor.Layout.CodeFrames.Any(frame => codeLine.Offset >= frame.Start && codeLine.Offset < frame.End))
+                return new MarkdownDecorationElement(new(offset, 0, InlineMarkdownLayout.DecorationKind.Indent, Indent: 10), () => { });
             if (editor._appearance.TextAlignment == NoteTextAlignment.Justify)
             {
                 var spacing = _spaces.FirstOrDefault(part => part.Start == offset);
@@ -456,7 +476,9 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
                     if (range.Scale != 1) element.TextRunProperties.SetFontRenderingEmSize(editor.FontSize * range.Scale);
                     if (style.HasFlag(InlineMarkdownLayout.Style.Strike)) element.TextRunProperties.SetTextDecorations(TextDecorations.Strikethrough);
                     if (style.HasFlag(InlineMarkdownLayout.Style.Highlight)) element.TextRunProperties.SetBackgroundBrush(Brushes.LightGoldenrodYellow);
-                    if (style.HasFlag(InlineMarkdownLayout.Style.Code)) element.TextRunProperties.SetBackgroundBrush(new SolidColorBrush(Color.FromArgb(16, 0, 0, 0)));
+                    if (style.HasFlag(InlineMarkdownLayout.Style.BlockCode))
+                        element.TextRunProperties.SetTypeface(new Typeface(new FontFamily("Consolas"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal));
+                    else if (style.HasFlag(InlineMarkdownLayout.Style.Code)) element.TextRunProperties.SetBackgroundBrush(new SolidColorBrush(Color.FromArgb(16, 0, 0, 0)));
                     if (style.HasFlag(InlineMarkdownLayout.Style.Link))
                     { element.TextRunProperties.SetForegroundBrush(Brushes.SteelBlue); element.TextRunProperties.SetTextDecorations(TextDecorations.Underline); }
                 });

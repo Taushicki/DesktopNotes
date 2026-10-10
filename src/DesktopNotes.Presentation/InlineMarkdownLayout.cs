@@ -14,10 +14,12 @@ internal sealed class InlineMarkdownLayout
     internal sealed record Decoration(int Start, int Length, DecorationKind Kind, string Label = "", double Indent = 0,
         Cell? Cell = null, IReadOnlyList<Cell>? Column = null, IReadOnlyList<IReadOnlyList<Cell>>? Columns = null);
     [Flags]
-    internal enum Style { None = 0, Bold = 1, Italic = 2, Code = 4, Strike = 8, Highlight = 16, Link = 32 }
+    internal enum Style { None = 0, Bold = 1, Italic = 2, Code = 4, Strike = 8, Highlight = 16, Link = 32, BlockCode = 64 }
     internal sealed record StyledRange(int Start, int Length, Style Style, double Scale = 1, int HeadingLevel = 0);
     internal List<Decoration> Decorations { get; } = [];
     internal List<StyledRange> Styles { get; } = [];
+    internal sealed record CodeFrame(int Start, int End, bool HasClosingFence);
+    internal List<CodeFrame> CodeFrames { get; } = [];
     private readonly List<(int Start, int End)> _code = [];
     private readonly List<(int Start, int End)> _tables = [];
     private readonly List<(int Start, int End, double Indent)> _items = [];
@@ -42,10 +44,27 @@ internal sealed class InlineMarkdownLayout
     {
         foreach (var block in blocks)
         {
-            if (block is CodeBlock)
+            if (block is CodeBlock code)
             {
                 _code.Add((block.Span.Start, block.Span.End));
-                Styles.Add(new(block.Span.Start, block.Span.Length, Style.Code, 12d / 14));
+                Styles.Add(new(block.Span.Start, block.Span.Length, Style.Code | Style.BlockCode, 12d / 14));
+                var first = source.LastIndexOf('\n', Math.Max(0, block.Span.Start - 1)) + 1;
+                var end = Math.Min(source.Length, block.Span.End + 1);
+                CodeFrames.Add(new(first, end, code is FencedCodeBlock { ClosingFencedCharCount: > 0 }));
+                if (code is FencedCodeBlock fenced)
+                {
+                    var openingEnd = source.IndexOf('\n', first); if (openingEnd < 0) openingEnd = source.Length;
+                    var openingLength = source[first..openingEnd].TrimEnd('\r').Length;
+                    if (openingLength > 0) Decorations.Add(new(first, openingLength, DecorationKind.Hidden));
+                    if (fenced.ClosingFencedCharCount > 0)
+                    {
+                        var closing = source.LastIndexOf('\n', Math.Max(first, end - 1)) + 1;
+                        // Markdig's span ends at the closing fence, excluding its newline.
+                        var closingEnd = source.IndexOf('\n', closing); if (closingEnd < 0) closingEnd = source.Length;
+                        var closingLength = source[closing..closingEnd].TrimEnd('\r').Length;
+                        if (closingLength > 0 && closing != first) Decorations.Add(new(closing, closingLength, DecorationKind.Hidden));
+                    }
+                }
                 continue;
             }
             if (block is Markdig.Extensions.Tables.Table table) DecorateTable(table, source);
