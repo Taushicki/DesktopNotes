@@ -149,7 +149,8 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
 
     private void DeleteNote(Guid id)
     {
-        if (System.Windows.MessageBox.Show(_windows[id], "Удалить заметку без возможности восстановления?", "DesktopNotes", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+        if (NoteDeletionPolicy.RequiresConfirmation(_notes.Get(id).Markdown) &&
+            System.Windows.MessageBox.Show(_windows[id], "Удалить заметку без возможности восстановления?", "DesktopNotes", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
         _notes.Delete(id);
         _board?.Detach(_windows[id]);
         _windows[id].ClosePermanently();

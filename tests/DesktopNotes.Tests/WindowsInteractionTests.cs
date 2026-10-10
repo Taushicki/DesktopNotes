@@ -140,7 +140,7 @@ public sealed class WindowsInteractionTests
         {
             var surface = Assert.IsType<Border>(toolbar.Content);
             var row = Assert.IsType<StackPanel>(surface.Child);
-            Assert.Equal(6, row.Children.Count);
+            Assert.Equal(7, row.Children.Count);
             toolbar.FontSizeInput.Text = "24"; toolbar.FontSizeInput.RaiseEvent(new System.Windows.Input.KeyboardFocusChangedEventArgs(System.Windows.Input.Keyboard.PrimaryDevice, 0, toolbar.FontSizeInput, null) { RoutedEvent = UIElement.LostKeyboardFocusEvent });
             Assert.IsType<Button>(row.Children[2]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.IsType<Button>(row.Children[4]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -530,6 +530,7 @@ public sealed class WindowsInteractionTests
             host.Show(); host.UpdateLayout();
             Assert.False(host.HandleWindowShortcut(System.Windows.Input.Key.Delete, System.Windows.Input.ModifierKeys.None));
             host.SetConnectionState(true, false);
+            host.HandleContentClick();
             System.Windows.Input.Keyboard.Focus(host.MarkdownEditor.TextArea);
             Assert.True(host.MarkdownEditor.IsKeyboardFocusWithin);
             Assert.False(host.HandleWindowShortcut(System.Windows.Input.Key.Delete, System.Windows.Input.ModifierKeys.None));
@@ -591,6 +592,56 @@ public sealed class WindowsInteractionTests
             var items = (StackPanel)((Border)popup.Child).Child;
             ((Button)items.Children[1]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.Equal(WindowLayer.Topmost, vm.Layer); Assert.True(host.Topmost); Assert.False(popup.IsOpen);
+        }
+        finally { host.ClosePermanently(); }
+    });
+
+    [Fact]
+    public Task FirstClickSelectsSecondEditsAndDeselectingRestoresSelectionMode() => OnStaThread(() =>
+    {
+        var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
+        var deletes = 0;
+        using var vm = new NoteViewModel(note, notes, () => { }, () => deletes++);
+        var host = new NoteWindow(vm, new Layers());
+        try
+        {
+            host.Show(); host.UpdateLayout();
+            Assert.True(host.MarkdownEditor.IsReadOnly);
+            Assert.True(host.HandleContentClick());
+            Assert.True(host.IsConnectionSelected); Assert.False(host.IsEditing);
+            Assert.False(host.MarkdownEditor.HandleShortcut(System.Windows.Input.Key.Enter, System.Windows.Input.ModifierKeys.None));
+            Assert.True(host.HandleWindowShortcut(System.Windows.Input.Key.Delete, System.Windows.Input.ModifierKeys.None));
+            Assert.Equal(1, deletes);
+            Assert.False(host.HandleContentClick());
+            Assert.True(host.IsEditing); Assert.True(host.MarkdownEditor.IsKeyboardFocusWithin);
+            Assert.False(host.HandleWindowShortcut(System.Windows.Input.Key.Delete, System.Windows.Input.ModifierKeys.None));
+            host.SetConnectionState(false, false);
+            Assert.True(host.MarkdownEditor.IsReadOnly);
+            Assert.True(host.HandleContentClick()); Assert.False(host.IsEditing);
+            var row = (StackPanel)((Border)host.FormattingToolbar.Content).Child;
+            var delete = (Button)row.Children[6];
+            Assert.Equal("Удалить заметку", System.Windows.Automation.AutomationProperties.GetName(delete));
+            delete.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); Assert.Equal(2, deletes);
+        }
+        finally { host.ClosePermanently(); }
+    });
+
+    [Fact]
+    public Task RoutedContentClicksSelectBeforeEnteringTheEditor() => OnStaThread(() =>
+    {
+        var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
+        using var vm = new NoteViewModel(note, notes, () => { }, () => { });
+        var host = new NoteWindow(vm, new Layers());
+        try
+        {
+            host.Show(); host.UpdateLayout();
+            void Click() => host.MarkdownEditor.TextArea.RaiseEvent(new System.Windows.Input.MouseButtonEventArgs(System.Windows.Input.Mouse.PrimaryDevice, 0, System.Windows.Input.MouseButton.Left)
+                { RoutedEvent = System.Windows.Input.Mouse.PreviewMouseDownEvent });
+            Click(); Assert.True(host.IsConnectionSelected); Assert.False(host.IsEditing);
+            Assert.False(host.MarkdownEditor.IsKeyboardFocusWithin);
+            Click(); Assert.True(host.IsEditing); Assert.True(host.MarkdownEditor.IsKeyboardFocusWithin);
+            host.SetConnectionState(false, false);
+            Click(); Assert.False(host.IsEditing);
         }
         finally { host.ClosePermanently(); }
     });

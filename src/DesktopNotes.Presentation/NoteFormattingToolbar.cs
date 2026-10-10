@@ -70,6 +70,9 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         row.Children.Add(_pin);
         _layer = Button("Расположение окон", OpenLayers);
         row.Children.Add(_layer);
+        var delete = Button("Удалить заметку", _host.DeleteSelectedNote);
+        delete.Content = CreateIcon("M 2,4 L 18,4 M 7,4 L 7,1 L 13,1 L 13,4 M 4,4 L 5,20 L 15,20 L 16,4 M 8,8 L 8,16 M 12,8 L 12,16");
+        row.Children.Add(delete);
         Content = new Border { LayoutTransform = new ScaleTransform(ToolbarScale, ToolbarScale), Margin = new Thickness(5), Padding = new Thickness(4, 0, 4, 0), CornerRadius = new CornerRadius(10),
             Background = new SolidColorBrush(Color.FromRgb(252, 253, 255)), BorderBrush = new SolidColorBrush(Color.FromRgb(210, 219, 230)),
             BorderThickness = new Thickness(1), Child = row, Effect = new DropShadowEffect { BlurRadius = 6, ShadowDepth = 1, Opacity = 0.16 } };
@@ -84,7 +87,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
 
     private static Button Button(string tooltip, Action action)
     {
-        var button = new Button { Width = 36, Height = 32, Margin = new Thickness(1, 0, 1, 0), Background = Brushes.Transparent,
+        var button = new Button { Width = 30, Height = 32, Margin = new Thickness(1, 0, 1, 0), Background = Brushes.Transparent,
             BorderThickness = new Thickness(0), Foreground = Brushes.DarkSlateGray, Focusable = false, Padding = new Thickness(4) };
         AutomationProperties.SetName(button, tooltip);
         button.Click += (_, _) => action();

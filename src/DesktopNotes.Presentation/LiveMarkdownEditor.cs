@@ -97,7 +97,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     }
     private void OnFenceTextEntering(object sender, TextCompositionEventArgs e)
     {
-        if (SelectionLength != 0 || e.Text.Contains('\n')) return;
+        if (IsReadOnly || SelectionLength != 0 || e.Text.Contains('\n')) return;
         var line = Document.GetLineByOffset(CaretOffset);
         if (CaretOffset != line.EndOffset || Layout.CodeFrames.Any(frame => CaretOffset >= frame.Start && CaretOffset < frame.End)) return;
         if (!Layout.CodeFrames.Any(frame => frame.HasClosingFence && frame.Start > CaretOffset)) return;
@@ -247,6 +247,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     }
     private void ToggleTask(InlineMarkdownLayout.Decoration part)
     {
+        if (IsReadOnly) return;
         var marker = Text.IndexOf('[', part.Start, part.Length);
         if (marker < 0) return;
         using (Document.RunUpdate()) Document.Replace(marker + 1, 1, Text[marker + 1] == ' ' ? "x" : " ");
@@ -292,7 +293,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 
     private void OnTextInput(object sender, TextCompositionEventArgs e)
     {
-        if (e.Text.Length != 1 || (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) != 0) return;
+        if (IsReadOnly || e.Text.Length != 1 || (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) != 0) return;
         var edit = MarkdownEditingCommands.PairCharacter(Text, SelectionStart, SelectionLength, e.Text[0]);
         if (edit is not null) { ApplyEdit(edit); e.Handled = true; }
     }
@@ -303,6 +304,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     }
     internal bool HandleShortcut(Key key, ModifierKeys modifiers)
     {
+        if (IsReadOnly) return false;
         if (modifiers == ModifierKeys.None && SelectionLength == 0 && key is Key.Up or Key.Down or Key.Left or Key.Right && TryLeaveCodeBlock(key)) return true;
         if (key == Key.Back && modifiers == ModifierKeys.None && SelectionLength == 0 && TryUnwrapCodeBlock()) return true;
         if (key == Key.Enter && modifiers == ModifierKeys.Shift)

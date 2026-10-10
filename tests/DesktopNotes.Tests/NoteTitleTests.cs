@@ -149,6 +149,7 @@ public sealed class NoteTitleTests
                 Assert.InRange(headingHeight - plain.TextArea.TextView.VisualLines.First().Height, 5.9, 6.1);
             }
             finally { comparison.Close(); }
+            window.HandleContentClick(); window.HandleContentClick();
             editor.Select(editor.Text.IndexOf("Слово", StringComparison.Ordinal), 0);
             Assert.True(editor.HandleShortcut(System.Windows.Input.Key.Enter, System.Windows.Input.ModifierKeys.None));
             window.UpdateLayout();

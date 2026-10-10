@@ -36,6 +36,7 @@ public sealed class NoteWindow : Window
     internal Action<NoteWindow>? ControlClicked { get; set; }
     internal Action<NoteWindow>? ConnectionClicked { get; set; }
     internal Action<NoteWindow>? InteractionDeactivated { get; set; }
+    internal bool IsEditing => !_editor.IsReadOnly;
     internal bool IsConnectionSelected => _linkHandles.IsSelected;
     internal NoteFormattingToolbar FormattingToolbar => _formatting;
     internal LiveMarkdownEditor MarkdownEditor => _editor;
@@ -105,7 +106,7 @@ public sealed class NoteWindow : Window
         Grid.SetColumn(collapse, 1); header.Children.Add(collapse);
         root.Children.Add(header);
 
-        _editor = new LiveMarkdownEditor() { Text = vm.Markdown, ContextMenu = ContextMenu };
+        _editor = new LiveMarkdownEditor() { Text = vm.Markdown, ContextMenu = ContextMenu, IsReadOnly = true };
         _editor.EnableNoteTitle();
         if (_editor.Text != vm.Markdown) vm.Markdown = _editor.Text;
         _editor.TextChanged += (_, _) => { if (_editor.Text != _vm.Markdown) _vm.Markdown = _editor.Text; };
@@ -141,10 +142,13 @@ public sealed class NoteWindow : Window
         {
             if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) == 0) CommitSelection?.Invoke();
         };
-        PreviewMouseLeftButtonDown += (_, e) =>
+        PreviewMouseDown += (_, e) =>
         {
+            if (e.ChangedButton != System.Windows.Input.MouseButton.Left) return;
+            if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) == 0 && IsContentSource(e.OriginalSource as DependencyObject) && HandleContentClick())
+            { e.Handled = true; return; }
             if (LiveMarkdownEditor.IsInteractivePreviewElement(e.OriginalSource as DependencyObject)) return;
-            if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) != 0 && _editor.IsMouseOver && _editor.HandleInteractiveClick(e))
+            if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) != 0 && IsEditing && _editor.IsMouseOver && _editor.HandleInteractiveClick(e))
             { e.Handled = true; return; }
             if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) == 0)
             {
@@ -159,6 +163,8 @@ public sealed class NoteWindow : Window
             var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
             if (HandleWindowShortcut(key, System.Windows.Input.Keyboard.Modifiers)) { e.Handled = true; return; }
             if (key == System.Windows.Input.Key.Escape && _editor.HandleEscape()) { e.Handled = true; return; }
+            if (key == System.Windows.Input.Key.Escape && IsEditing)
+            { EndEditing(); System.Windows.Input.Keyboard.Focus(this); e.Handled = true; return; }
             if (key == System.Windows.Input.Key.Escape && (CancelInteraction?.Invoke() ?? false))
             {
                 _linkHandles.CancelDrag();
@@ -196,13 +202,46 @@ public sealed class NoteWindow : Window
         _editor.ToggleBoldSelection();
     }
 
+    private bool IsContentSource(DependencyObject? source)
+    {
+        while (source is not null)
+        {
+            if (source == _body) return true;
+            source = source is FrameworkContentElement content ? content.Parent :
+                source is Visual or System.Windows.Media.Media3D.Visual3D ? VisualTreeHelper.GetParent(source) : LogicalTreeHelper.GetParent(source);
+        }
+        return false;
+    }
+
+    internal bool HandleContentClick()
+    {
+        var wasSelected = IsConnectionSelected;
+        ConnectionClicked?.Invoke(this);
+        if (!IsConnectionSelected) SetConnectionState(true, false);
+        if (!wasSelected)
+        {
+            EndEditing();
+            System.Windows.Input.Keyboard.Focus(this);
+            return true;
+        }
+        if (!_vm.IsCollapsed)
+        {
+            _editor.IsReadOnly = false;
+            System.Windows.Input.Keyboard.Focus(_editor.TextArea);
+        }
+        return false;
+    }
+
+    private void EndEditing() => _editor.IsReadOnly = true;
+    internal void DeleteSelectedNote() => _vm.Delete.Execute(null);
+
     internal Action<string>? OpenNoteLink { get; set; }
     internal Action? NewNoteRequested { get; set; }
     internal Action? SaveRequested { get; set; }
     internal bool HandleWindowShortcut(System.Windows.Input.Key key, System.Windows.Input.ModifierKeys modifiers)
     {
         if (key == System.Windows.Input.Key.Delete && modifiers == System.Windows.Input.ModifierKeys.None &&
-            IsConnectionSelected && !_editor.IsKeyboardFocusWithin)
+            IsConnectionSelected && (!IsEditing || !_editor.IsKeyboardFocusWithin))
         { _vm.Delete.Execute(null); return true; }
         if (modifiers != System.Windows.Input.ModifierKeys.Control) return false;
         if (key == System.Windows.Input.Key.N && NewNoteRequested is not null) { NewNoteRequested(); return true; }
@@ -238,7 +277,9 @@ public sealed class NoteWindow : Window
                     _editor.CaretOffset = Math.Min(caret, _editor.Text.Length);
                 }
                 break;
-            case nameof(NoteViewModel.Color): case nameof(NoteViewModel.IsCollapsed): ApplyState(); break;
+            case nameof(NoteViewModel.Color): case nameof(NoteViewModel.IsCollapsed):
+                if (_vm.IsCollapsed) EndEditing();
+                ApplyState(); break;
             case nameof(NoteViewModel.Layer): ApplyLayer(); break;
         }
     }
@@ -360,6 +401,7 @@ public sealed class NoteWindow : Window
 
     internal void SetConnectionState(bool selected, bool targeted)
     {
+        if (!selected) EndEditing();
         _connectionFrame.BorderBrush = selected || targeted ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(74, 164, 255)) : Brushes.Transparent;
         _linkHandles.SetState(selected, targeted);
         _formatting.SetSelected(selected);
