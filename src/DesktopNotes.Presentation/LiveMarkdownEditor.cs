@@ -165,6 +165,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     }
     internal bool HandleShortcut(Key key, ModifierKeys modifiers)
     {
+        if (key == Key.Back && modifiers == ModifierKeys.None && SelectionLength == 0 && TryUnwrapCodeBlock()) return true;
         if (key == Key.Enter && modifiers == ModifierKeys.Shift)
         {
             // Handle this before AvalonEdit's indentation strategy: Shift+Enter
@@ -250,6 +251,27 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
                 ApplyEdit(list ? MarkdownEditingCommands.IndentLines(Text, SelectionStart, SelectionLength, modifiers == ModifierKeys.Shift) :
                     MarkdownEditingCommands.Indent(Text, SelectionStart, SelectionLength, modifiers == ModifierKeys.Shift));
             }
+            return true;
+        }
+        return false;
+    }
+
+    private bool TryUnwrapCodeBlock()
+    {
+        foreach (var frame in Layout.CodeFrames)
+        {
+            if (frame.ContentStart is not { } contentStart) continue;
+            var opening = Document.GetLineByOffset(frame.Start);
+            var atFence = CaretOffset == frame.Start || CaretOffset == opening.EndOffset;
+            var atContent = CaretOffset >= contentStart && Document.GetLineByOffset(CaretOffset).Offset == contentStart &&
+                string.IsNullOrWhiteSpace(Text[contentStart..CaretOffset]);
+            if (!atFence && !atContent) continue;
+            var bodyEnd = frame.ClosingStart ?? frame.End;
+            var end = frame.ClosingStart is { } closing ? Document.GetLineByOffset(closing).Offset + Document.GetLineByOffset(closing).TotalLength : frame.End;
+            var body = Text[contentStart..bodyEnd];
+            // One replacement removes both fence rows; all content and line endings
+            // inside the block are retained, and Undo restores the original block.
+            ApplyEdit(new(frame.Start, end - frame.Start, body, atContent ? Math.Min(body.Length, CaretOffset - contentStart) : 0, 0));
             return true;
         }
         return false;

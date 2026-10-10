@@ -11,6 +11,41 @@ namespace DesktopNotes.Tests;
 public sealed class CodeBlockEditorTests
 {
     [Theory]
+    [InlineData("```\ntext\n```", 4, "text\n", 0)]
+    [InlineData("Before\r\n\r\n```csharp\r\nfirst\r\n\r\nsecond\r\n```\r\n\r\nAfter", 21, "Before\r\n\r\nfirst\r\n\r\nsecond\r\n\r\nAfter", 10)]
+    [InlineData("~~~python\ntext\n~~~\nAfter", 10, "text\nAfter", 0)]
+    [InlineData("```\n\n```", 4, "\n", 0)]
+    [InlineData("```\ntext\n", 4, "text\n", 0)]
+    [InlineData("```", 3, "", 0)]
+    [InlineData("  ```\n  text\n  ```", 8, "  text\n", 2)]
+    [InlineData("````\nfirst\n```\nlast\n````", 5, "first\n```\nlast\n", 0)]
+    public Task BackspaceUnwrapsCodeWithoutLosingContentAndUndoRestoresFences(string source, int caret, string expected, int expectedCaret) => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = source, CaretOffset = caret };
+        Assert.True(editor.HandleShortcut(Key.Back, ModifierKeys.None));
+        Assert.Equal(expected, editor.Text); Assert.Equal(expectedCaret, editor.CaretOffset);
+        editor.Undo(); Assert.Equal(source, editor.Text);
+        editor.Redo(); Assert.Equal(expected, editor.Text);
+    });
+
+    [Fact]
+    public Task BackspaceOnlyUnwrapsTheSelectedBlockAtItsBeginning() => OnSta(() =>
+    {
+        const string source = "```\nfirst\n```\n\n~~~\nsecond\nlast\n~~~";
+        using var editor = new LiveMarkdownEditor { Text = source };
+        editor.CaretOffset = source.IndexOf("last", StringComparison.Ordinal);
+        Assert.False(editor.HandleShortcut(Key.Back, ModifierKeys.None)); Assert.Equal(source, editor.Text);
+        editor.CaretOffset = source.IndexOf("second", StringComparison.Ordinal) + 1;
+        Assert.False(editor.HandleShortcut(Key.Back, ModifierKeys.None));
+        editor.Select(source.IndexOf("second", StringComparison.Ordinal), 2);
+        Assert.False(editor.HandleShortcut(Key.Back, ModifierKeys.None));
+        editor.Select(source.IndexOf("second", StringComparison.Ordinal), 0);
+        Assert.True(editor.HandleShortcut(Key.Back, ModifierKeys.None));
+        Assert.Equal("```\nfirst\n```\n\nsecond\nlast\n", editor.Text);
+        Assert.Single(editor.Layout.CodeFrames);
+    });
+
+    [Theory]
     [InlineData("```", "```\n\n```", 4)]
     [InlineData("```csharp", "```csharp\n\n```", 10)]
     [InlineData("~~~~python", "~~~~python\n\n~~~~", 11)]
