@@ -45,7 +45,11 @@ public sealed class NoteService(INoteRepository repository)
         _notes.Clear();
         _groups.Clear();
         _links.Clear();
-        foreach (var note in result.Notes) { note.Validate(); _notes.Add(note.Id, note); }
+        foreach (var note in result.Notes)
+        {
+            note.Validate();
+            _notes.Add(note.Id, note with { Title = MarkdownNoteTitle.Read(note.Markdown, note.Title) });
+        }
         foreach (var group in result.Snapshot.Groups) _groups.Add(group.Id, group);
         foreach (var link in result.Snapshot.Links) _links.Add(link.Id, link);
         return result.Warning;
@@ -53,7 +57,7 @@ public sealed class NoteService(INoteRepository repository)
 
     public Note Create(double x, double y)
     {
-        var note = new Note { X = x, Y = y };
+        var note = new Note { X = x, Y = y, Markdown = "# Новая заметка\n\n" };
         Update(note);
         return note;
     }
@@ -61,7 +65,11 @@ public sealed class NoteService(INoteRepository repository)
     public void Update(Note note)
     {
         note.Validate();
-        if (_notes.TryGetValue(note.Id, out var previous) && previous == note) return;
+        _notes.TryGetValue(note.Id, out var previous);
+        var fallback = previous is not null && previous.Markdown != note.Markdown ? "Без названия" : note.Title;
+        note = note with { Title = previous is null || previous.Markdown != note.Markdown
+            ? MarkdownNoteTitle.Read(note.Markdown, fallback) : previous.Title };
+        if (previous == note) return;
         _notes[note.Id] = note;
         NoteUpdated?.Invoke(note);
         Changed?.Invoke();

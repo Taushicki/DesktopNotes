@@ -19,7 +19,7 @@ public sealed class NoteViewModel : INotifyPropertyChanged, IDisposable
     private Note _note;
     public event PropertyChangedEventHandler? PropertyChanged;
     public Note Snapshot => _note;
-    public string Title { get => _note.Title; set => Change(_note with { Title = value }); }
+    public string Title => _note.Title;
     public string Markdown { get => _note.Markdown; set => Change(_note with { Markdown = value }); }
     public NoteColor Color { get => _note.Color; set => Change(_note with { Color = value }); }
     public WindowLayer Layer { get => _note.Layer; set => Change(_note with { Layer = value }); }
@@ -46,7 +46,6 @@ public sealed class NoteViewModel : INotifyPropertyChanged, IDisposable
     private void Change(Note note, [CallerMemberName] string? property = null)
     {
         if (note == _note) return;
-        _note = note;
         _service.Update(note);
         OnChanged(property);
     }

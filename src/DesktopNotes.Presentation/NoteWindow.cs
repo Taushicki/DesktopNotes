@@ -21,7 +21,6 @@ public sealed class NoteWindow : Window
     private readonly LiveMarkdownEditor _editor;
     private readonly Border _titleArea;
     private readonly TextBlock _titleLabel;
-    private readonly TextBox _titleEditor;
     private readonly Border _frame = new() { BorderThickness = new Thickness(2), IsHitTestVisible = false };
     private readonly EdgeLinkHandles _linkHandles;
     private readonly NoteFormattingToolbar _formatting;
@@ -47,7 +46,6 @@ public sealed class NoteWindow : Window
     internal Action? LinkDragCompleted { get; set; }
     internal Func<bool>? CancelInteraction { get; set; }
     internal event Action? GeometryChanged;
-    private bool _editingTitle;
     private bool _updatingLayout;
     private bool _ready;
     private bool _closing;
@@ -81,47 +79,18 @@ public sealed class NoteWindow : Window
             Background = Brushes.Transparent, Padding = new Thickness(8, 0, 4, 0), Focusable = true,
             Cursor = System.Windows.Input.Cursors.SizeAll
         };
-        var titleContent = new Grid();
-        _titleLabel = new TextBlock { FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
+        _titleLabel = new TextBlock { Name = "CollapsedTitle", FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
+            Visibility = vm.IsCollapsed ? Visibility.Visible : Visibility.Collapsed };
         _titleLabel.SetBinding(TextBlock.TextProperty, new Binding(nameof(vm.Title)));
-        _titleEditor = new TextBox
-        {
-            Background = Brushes.Transparent, BorderThickness = new Thickness(0), FontWeight = FontWeights.SemiBold,
-            VerticalContentAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed,
-            Cursor = System.Windows.Input.Cursors.IBeam
-        };
-        _titleEditor.SetBinding(TextBox.TextProperty, new Binding(nameof(vm.Title)) { UpdateSourceTrigger = UpdateSourceTrigger.Explicit });
-        _titleEditor.ContextMenu = ContextMenu;
-        titleContent.Children.Add(_titleLabel);
-        titleContent.Children.Add(_titleEditor);
-        _titleArea.Child = titleContent;
+        _titleArea.Child = _titleLabel;
         _titleArea.MouseLeftButtonDown += (_, e) =>
         {
-            if (_editingTitle) return;
             e.Handled = true;
-            if (e.ClickCount == 2) BeginTitleEdit();
-            else
-            {
-                _titleArea.Focus();
-                if (_vm.IsPinned || !(BeginDrag?.Invoke(this) ?? true)) return;
-                try { DragMove(); }
-                finally { EndDrag?.Invoke(this); }
-            }
+            _titleArea.Focus();
+            if (_vm.IsPinned || !(BeginDrag?.Invoke(this) ?? true)) return;
+            try { DragMove(); }
+            finally { EndDrag?.Invoke(this); }
         };
-        _titleArea.KeyDown += (_, e) =>
-        {
-            if (e.Key == System.Windows.Input.Key.F2) { BeginTitleEdit(); e.Handled = true; }
-        };
-        _titleEditor.KeyDown += (_, e) =>
-        {
-            if (e.Key is System.Windows.Input.Key.Enter or System.Windows.Input.Key.Escape)
-            {
-                FinishTitleEdit(e.Key == System.Windows.Input.Key.Enter);
-                _titleArea.Focus();
-                e.Handled = true;
-            }
-        };
-        _titleEditor.LostKeyboardFocus += (_, _) => FinishTitleEdit(true);
         header.Children.Add(_titleArea);
         var collapse = MakeButton("−", "Свернуть / развернуть"); collapse.Command = vm.ToggleCollapsed;
         collapse.VerticalAlignment = VerticalAlignment.Top;
@@ -148,7 +117,7 @@ public sealed class NoteWindow : Window
         shell.Children.Add(_frame);
         shell.Children.Add(_connectionFrame);
         _linkHandles = new EdgeLinkHandles(this,
-            side => { FinishTitleEdit(true); LinkDragStarted?.Invoke(this, side); },
+            side => LinkDragStarted?.Invoke(this, side),
             () => LinkDragUpdated?.Invoke(), () => LinkDragCompleted?.Invoke(), () => CancelInteraction?.Invoke(),
             () => InteractionDeactivated?.Invoke(this));
         shell.Children.Add(_linkHandles);
@@ -228,27 +197,6 @@ public sealed class NoteWindow : Window
     }
     internal void InsertNoteLink(Guid id, string title) => _editor.InsertNoteLink(id, title);
 
-    private void BeginTitleEdit()
-    {
-        if (_editingTitle) return;
-        _editingTitle = true;
-        _titleEditor.GetBindingExpression(TextBox.TextProperty)?.UpdateTarget();
-        _titleLabel.Visibility = Visibility.Collapsed;
-        _titleEditor.Visibility = Visibility.Visible;
-        _titleEditor.Focus();
-        _titleEditor.SelectAll();
-    }
-
-    private void FinishTitleEdit(bool commit)
-    {
-        if (!_editingTitle) return;
-        _editingTitle = false;
-        var binding = _titleEditor.GetBindingExpression(TextBox.TextProperty);
-        if (commit) binding?.UpdateSource(); else binding?.UpdateTarget();
-        _titleEditor.Visibility = Visibility.Collapsed;
-        _titleLabel.Visibility = Visibility.Visible;
-    }
-
     private void PopulateMenu(ContextMenu menu)
     {
         menu.Items.Clear();
@@ -297,6 +245,7 @@ public sealed class NoteWindow : Window
         {
             Background = (Brush)new BrushConverter().ConvertFromString(NoteFormattingToolbar.Palette[(int)_vm.Color])!;
             _body.Visibility = _vm.IsCollapsed ? Visibility.Collapsed : Visibility.Visible;
+            _titleLabel.Visibility = _vm.IsCollapsed ? Visibility.Visible : Visibility.Collapsed;
             MinHeight = _vm.IsCollapsed ? 44 : 140;
             Height = _vm.IsCollapsed ? 44 : _vm.Snapshot.Height;
             ResizeMode = _vm.IsCollapsed ? ResizeMode.NoResize : ResizeMode.CanResize;
@@ -403,7 +352,6 @@ public sealed class NoteWindow : Window
 
     public void SaveBounds()
     {
-        FinishTitleEdit(true);
         if (!_ready || _updatingLayout || _closing || WindowState != WindowState.Normal) return;
         _vm.SetBounds(Left, Top, Width, _vm.IsCollapsed ? _vm.Snapshot.Height : Height);
     }
