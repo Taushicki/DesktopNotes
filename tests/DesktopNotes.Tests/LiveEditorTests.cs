@@ -13,6 +13,51 @@ namespace DesktopNotes.Tests;
 
 public sealed class LiveEditorTests
 {
+    [Fact]
+    public Task ShiftEnterListContinuationRemainsOnSeparateLineAfterLosingFocus() => OnSta(() =>
+    {
+        const string source = "Привет\n\n- первая строка";
+        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = source, Width = 320, Height = 200 };
+        var surface = new Grid { Width = 320, Height = 200, Background = new SolidColorBrush(Color.FromRgb(228, 216, 250)) };
+        surface.Children.Add(editor);
+        var root = new StackPanel(); root.Children.Add(surface);
+        var otherControl = new Button { Content = "outside editor" }; root.Children.Add(otherControl);
+        var host = new Window { Content = root, Left = -10000, Top = -10000, Width = 340, Height = 260, ShowActivated = false, ShowInTaskbar = false };
+        void Capture(string name)
+        {
+            if (Environment.GetEnvironmentVariable("DESKTOPNOTES_TEST_RENDER_DIR") is not { } directory) return;
+            var bitmap = new RenderTargetBitmap(320, 200, 96, 96, PixelFormats.Pbgra32); bitmap.Render(surface);
+            Directory.CreateDirectory(directory); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var file = File.Create(Path.Combine(directory, name)); encoder.Save(file);
+        }
+        try
+        {
+            host.Show(); Keyboard.Focus(editor.TextArea); editor.Select(source.Length, 0);
+            Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.Shift));
+            editor.Document.Insert(editor.CaretOffset, "продолжение"); host.UpdateLayout();
+            Capture("compact-note-source.png");
+            var expected = source + "\nпродолжение";
+            Assert.Equal(expected, editor.Text);
+            Keyboard.Focus(otherControl); host.UpdateLayout();
+            Assert.False(editor.IsKeyboardFocusWithin);
+            var view = Assert.Single(editor.TextArea.TextView.VisualLines.SelectMany(line => line.Elements)
+                .OfType<ICSharpCode.AvalonEdit.Rendering.InlineObjectElement>().Select(element => element.Element).OfType<RichTextBox>(),
+                view => view.Document.Blocks.FirstBlock is System.Windows.Documents.List);
+            var list = Assert.IsType<System.Windows.Documents.List>(view.Document.Blocks.FirstBlock);
+            Assert.Single(list.ListItems);
+            var paragraph = Assert.IsType<Paragraph>(list.ListItems.FirstListItem.Blocks.FirstBlock);
+            Assert.Single(paragraph.Inlines.OfType<LineBreak>());
+            var first = paragraph.Inlines.FirstInline.ContentStart.GetCharacterRect(LogicalDirection.Forward);
+            var next = paragraph.Inlines.LastInline.ContentStart.GetCharacterRect(LogicalDirection.Forward);
+            Assert.True(next.Top > first.Top + 5);
+            Assert.Equal(expected, editor.Text);
+            Capture("compact-note-preview.png");
+            Keyboard.Focus(editor.TextArea); editor.CaretOffset = expected.Length; host.UpdateLayout();
+            Assert.True(editor.IsSourceVisible(editor.PreviewBlocks.Last())); Assert.Equal(expected, editor.Text);
+        }
+        finally { host.Close(); }
+    });
+
     [Theory]
     [InlineData("- item")]
     [InlineData("- ")]

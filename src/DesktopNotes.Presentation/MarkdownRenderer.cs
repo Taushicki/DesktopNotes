@@ -16,7 +16,7 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
     private readonly MarkdownPipeline _pipeline = MarkdownPipelines.Create();
     public FlowDocument Render(string markdown, MarkdownRenderActions? actions = null)
     {
-        var document = new FlowDocument { FontFamily = new FontFamily("Segoe UI"), FontSize = 14, PagePadding = new Thickness(8), Foreground = Brushes.DarkSlateGray };
+        var document = new FlowDocument { FontFamily = new FontFamily("Segoe UI"), FontSize = 14, PagePadding = new Thickness(4), Foreground = Brushes.DarkSlateGray };
         foreach (var block in Markdig.Markdown.Parse(markdown, _pipeline))
             document.Blocks.Add(RenderBlock(block, actions));
         return document;
@@ -27,14 +27,14 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
         switch (block)
         {
             case Markdig.Extensions.Tables.Table table:
-                var visualTable = new System.Windows.Documents.Table { CellSpacing = 0, Margin = new Thickness(0, 4, 0, 8) };
+                var visualTable = new System.Windows.Documents.Table { CellSpacing = 0, Margin = new Thickness(0, 2, 0, 2) };
                 var rows = new System.Windows.Documents.TableRowGroup(); visualTable.RowGroups.Add(rows);
                 foreach (var row in table.OfType<Markdig.Extensions.Tables.TableRow>())
                 {
                     var visualRow = new System.Windows.Documents.TableRow(); rows.Rows.Add(visualRow);
                     foreach (var cell in row.OfType<Markdig.Extensions.Tables.TableCell>())
                     {
-                        var visualCell = new System.Windows.Documents.TableCell { BorderBrush = Brushes.SlateGray, BorderThickness = new Thickness(0.5), Padding = new Thickness(5),
+                        var visualCell = new System.Windows.Documents.TableCell { BorderBrush = Brushes.SlateGray, BorderThickness = new Thickness(0.5), Padding = new Thickness(3),
                             FontWeight = row.IsHeader ? FontWeights.Bold : FontWeights.Normal };
                         foreach (var child in cell) visualCell.Blocks.Add(RenderBlock(child, actions));
                         visualRow.Cells.Add(visualCell);
@@ -51,24 +51,24 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
                 return new Paragraph(new Run(code.Lines.ToString()))
                 {
                     FontFamily = new FontFamily("Consolas"), FontSize = 12,
-                    Background = new SolidColorBrush(Color.FromArgb(22, 0, 0, 0)), Padding = new Thickness(8)
+                    Background = new SolidColorBrush(Color.FromArgb(22, 0, 0, 0)), Padding = new Thickness(4), Margin = new Thickness(0)
                 };
             case ListBlock list:
                 var result = new System.Windows.Documents.List
                 {
                     MarkerStyle = list.IsOrdered ? TextMarkerStyle.Decimal : TextMarkerStyle.Disc,
-                    Margin = new Thickness(16, 4, 0, 4)
+                    Margin = new Thickness(0), Padding = new Thickness(16, 0, 0, 0), MarkerOffset = 3
                 };
                 if (list.IsOrdered && int.TryParse(list.OrderedStart, out var start) && start > 0) result.StartIndex = start;
                 foreach (var item in list.OfType<ListItemBlock>())
                 {
-                    var listItem = new ListItem();
+                    var listItem = new ListItem { Margin = new Thickness(0), Padding = new Thickness(0) };
                     foreach (var child in item) listItem.Blocks.Add(RenderBlock(child, actions));
                     result.ListItems.Add(listItem);
                 }
                 return result;
             case QuoteBlock quote:
-                var section = new Section { BorderBrush = Brushes.SlateGray, BorderThickness = new Thickness(3, 0, 0, 0), Padding = new Thickness(10, 0, 0, 0) };
+                var section = new Section { BorderBrush = Brushes.SlateGray, BorderThickness = new Thickness(2, 0, 0, 0), Padding = new Thickness(6, 0, 0, 0), Margin = new Thickness(0) };
                 foreach (var child in quote) section.Blocks.Add(RenderBlock(child, actions));
                 return section;
             case ThematicBreakBlock: return new Paragraph(new Run("────────────")) { Foreground = Brushes.SlateGray };
@@ -78,7 +78,7 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
 
     private static Paragraph Paragraph(ContainerInline? inline, MarkdownRenderActions? actions)
     {
-        var paragraph = new Paragraph { Margin = new Thickness(0, 4, 0, 8) };
+        var paragraph = new Paragraph { Margin = new Thickness(0) };
         if (inline is not null) AddInlines(paragraph.Inlines, inline, actions);
         return paragraph;
     }
@@ -101,7 +101,9 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
                     checkbox.Click += (_, _) => actions?.ToggleTask?.Invoke(task.Span.Start, checkbox.IsChecked == true);
                     target.Add(new InlineUIContainer(checkbox)); break;
                 case CodeInline code: target.Add(new Run(code.Content) { FontFamily = new FontFamily("Consolas"), Background = new SolidColorBrush(Color.FromArgb(22, 0, 0, 0)) }); break;
-                case LineBreakInline line: target.Add(line.IsHard ? new LineBreak() : new Run(" ")); break;
+                // Preserve the lines the user entered, including Shift+Enter.
+                // Like Obsidian with strict line breaks disabled, soft breaks remain visible.
+                case LineBreakInline: target.Add(new LineBreak()); break;
                 case EmphasisInline emphasis:
                     Span span = emphasis.DelimiterCount == 2 ? new Bold() : new Italic();
                     if (emphasis.DelimiterChar == '~') { span = new Span { TextDecorations = TextDecorations.Strikethrough }; }
