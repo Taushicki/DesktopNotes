@@ -4,6 +4,41 @@ namespace DesktopNotes.Application;
 
 public static class MarkdownEditingCommands
 {
+    public static MarkdownTextEdit DeleteLines(string text, int start, int length)
+    {
+        var first = start == 0 ? 0 : text.LastIndexOf('\n', start - 1) + 1;
+        var last = text.IndexOf('\n', Math.Min(text.Length, start + Math.Max(0, length - 1)));
+        if (last >= 0) last++;
+        else
+        {
+            last = text.Length;
+            if (first > 0) { first--; if (first > 0 && text[first - 1] == '\r') first--; }
+        }
+        return new(first, last - first, "", 0, 0);
+    }
+
+    public static MarkdownTextEdit IndentLines(string text, int start, int length, bool unindent)
+    {
+        var first = start == 0 ? 0 : text.LastIndexOf('\n', start - 1) + 1;
+        var last = text.IndexOf('\n', Math.Min(text.Length, start + Math.Max(0, length - 1))); if (last < 0) last = text.Length;
+        return Indent(text, first, Math.Max(1, last - first), unindent);
+    }
+
+    public static MarkdownTextEdit ToggleTasks(string text, int start, int length)
+    {
+        if (length == 0) return ToggleTask(text, start);
+        var first = start == 0 ? 0 : text.LastIndexOf('\n', start - 1) + 1;
+        var last = text.IndexOf('\n', start + length - 1); if (last < 0) last = text.Length;
+        var original = text[first..last];
+        var changed = string.Join('\n', original.Split('\n').Select(line =>
+        {
+            if (string.IsNullOrWhiteSpace(line)) return line;
+            var edit = ToggleTask(line, 0);
+            return line.Remove(edit.Start, edit.Length).Insert(edit.Start, edit.Replacement);
+        }));
+        return new(first, original.Length, changed, 0, changed.Length);
+    }
+
     public static MarkdownTextEdit? PairCharacter(string text, int start, int length, char character)
     {
         var pairs = new Dictionary<char, char> { ['('] = ')', ['['] = ']', ['{'] = '}', ['"'] = '"', ['\''] = '\'' };
@@ -76,7 +111,10 @@ public static class MarkdownEditingCommands
             var index = first + match.Groups["check"].Index;
             return new(index, 1, match.Groups["check"].Value == " " ? "x" : " ", 1, 0);
         }
-        var changed = "- [ ] " + Regex.Replace(line, @"^\s*[-+*] ", "");
-        return new(first, line.Length, changed, Math.Min(changed.Length, caret - first + 6), 0);
+        var indent = Regex.Match(line, @"^[ \t]*").Value;
+        var content = line[indent.Length..];
+        var bullet = Regex.Match(content, @"^[-+*] ");
+        var changed = indent + "- [ ] " + content[bullet.Length..];
+        return new(first, line.Length, changed, Math.Min(changed.Length, Math.Max(indent.Length + 6, caret - first + 6 - bullet.Length)), 0);
     }
 }

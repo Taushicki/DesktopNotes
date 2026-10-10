@@ -134,6 +134,12 @@ public sealed class NoteWindow : Window
         _editor = new LiveMarkdownEditor(markdown) { Text = vm.Markdown, ContextMenu = ContextMenu };
         _editor.TextChanged += (_, _) => { if (_editor.Text != _vm.Markdown) _vm.Markdown = _editor.Text; };
         _editor.OpenNoteRequested += destination => OpenNoteLink?.Invoke(destination);
+        _editor.OpenWebLinkRequested += uri =>
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
+            catch (Exception error) when (error is Win32Exception or InvalidOperationException)
+            { System.Windows.MessageBox.Show(this, "Не удалось открыть ссылку: " + error.Message, "DesktopNotes"); }
+        };
         _editor.ContentGeometryChanged += UpdateEditorHeight;
         _body.Children.Add(_editor);
         Grid.SetRow(_body, 1); root.Children.Add(_body);
@@ -168,6 +174,7 @@ public sealed class NoteWindow : Window
         PreviewKeyDown += (_, e) =>
         {
             var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+            if (HandleWindowShortcut(key, System.Windows.Input.Keyboard.Modifiers)) { e.Handled = true; return; }
             if (key == System.Windows.Input.Key.Escape && _editor.HandleEscape()) { e.Handled = true; return; }
             if (key == System.Windows.Input.Key.Escape && (CancelInteraction?.Invoke() ?? false))
             {
@@ -207,6 +214,16 @@ public sealed class NoteWindow : Window
     }
 
     internal Action<string>? OpenNoteLink { get; set; }
+    internal Action? NewNoteRequested { get; set; }
+    internal Action? SaveRequested { get; set; }
+    internal bool HandleWindowShortcut(System.Windows.Input.Key key, System.Windows.Input.ModifierKeys modifiers)
+    {
+        if (modifiers != System.Windows.Input.ModifierKeys.Control) return false;
+        if (key == System.Windows.Input.Key.N && NewNoteRequested is not null) { NewNoteRequested(); return true; }
+        if (key == System.Windows.Input.Key.S && SaveRequested is not null) { SaveBounds(); SaveRequested(); return true; }
+        if (key == System.Windows.Input.Key.W) { HideNote(); return true; }
+        return false;
+    }
     internal void InsertNoteLink(Guid id, string title) => _editor.InsertNoteLink(id, title);
 
     private void BeginTitleEdit()

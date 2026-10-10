@@ -11,6 +11,8 @@ using ICSharpCode.AvalonEdit.Search;
 using DesktopNotes.Application;
 using DesktopNotes.Domain;
 using Markdig;
+using Markdig.Syntax;
+using Markdig.Syntax.Inlines;
 
 namespace DesktopNotes.Presentation;
 
@@ -27,6 +29,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     internal sealed record PreviewBlock(int Start, int Length, bool IsCode = false, bool IsTable = false);
     internal IReadOnlyList<PreviewBlock> PreviewBlocks => _blocks;
     internal event Action<string>? OpenNoteRequested;
+    internal event Action<Uri>? OpenWebLinkRequested;
     internal event Action? ContentGeometryChanged;
     private readonly PreviewGenerator _generator;
     private readonly SearchPanel _search;
@@ -141,46 +144,83 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 
     private void OnKey(object sender, KeyEventArgs e)
     {
-        var modifiers = Keyboard.Modifiers;
-        if (e.Key == Key.Back && modifiers == ModifierKeys.None && SelectionLength == 0 && CaretOffset > 0 && CaretOffset < Text.Length)
+        if (HandleShortcut(e.Key == Key.System ? e.SystemKey : e.Key, Keyboard.Modifiers)) e.Handled = true;
+    }
+    internal bool HandleShortcut(Key key, ModifierKeys modifiers)
+    {
+        if ((modifiers is ModifierKeys.Control or (ModifierKeys.Control | ModifierKeys.Shift)) && key is Key.Left or Key.Right)
+        {
+            var anchor = SelectionLength > 0 && CaretOffset == SelectionStart ? SelectionStart + SelectionLength : SelectionStart;
+            var target = WordBoundary(key == Key.Right);
+            if ((modifiers & ModifierKeys.Shift) != 0) { Select(Math.Min(anchor, target), Math.Abs(target - anchor)); CaretOffset = target; }
+            else { Select(target, 0); }
+            TextArea.Caret.BringCaretToView(); return true;
+        }
+        if (modifiers == ModifierKeys.Control && key is Key.Back or Key.Delete)
+        {
+            if (SelectionLength > 0) ApplyEdit(new(SelectionStart, SelectionLength, "", 0, 0));
+            else
+            {
+                var target = WordBoundary(key == Key.Delete);
+                ApplyEdit(new(Math.Min(CaretOffset, target), Math.Abs(target - CaretOffset), "", 0, 0));
+            }
+            return true;
+        }
+        if (key == Key.Back && modifiers == ModifierKeys.None && SelectionLength == 0 && CaretOffset > 0 && CaretOffset < Text.Length)
         {
             if (Text.Substring(CaretOffset - 1, 2) is "()" or "[]" or "{}" or "\"\"" or "''")
-            { ApplyEdit(new(CaretOffset - 1, 2, "", 0, 0)); e.Handled = true; return; }
+            { ApplyEdit(new(CaretOffset - 1, 2, "", 0, 0)); return true; }
         }
         if (modifiers == ModifierKeys.Control)
         {
-            var marker = e.Key switch { Key.B => "**", Key.I => "*", Key.Oem3 => "`", _ => null };
-            if (marker is not null) { ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, marker)); e.Handled = true; return; }
-            if (e.Key == Key.K)
+            var marker = key switch { Key.B => "**", Key.I => "*", Key.Oem3 => "`", _ => null };
+            if (marker is not null) { ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, marker)); return true; }
+            if (key == Key.K)
             {
                 var label = SelectionLength == 0 ? "ссылка" : SelectedText;
                 var replacement = $"[{label}](https://)";
-                ApplyEdit(new(SelectionStart, SelectionLength, replacement, label.Length + 3, 8)); e.Handled = true; return;
+                ApplyEdit(new(SelectionStart, SelectionLength, replacement, label.Length + 3, 8)); return true;
             }
-            if (e.Key == Key.Enter) { ApplyEdit(MarkdownEditingCommands.ToggleTask(Text, CaretOffset)); e.Handled = true; return; }
-            if (e.Key >= Key.D1 && e.Key <= Key.D6)
-            { ApplyEdit(MarkdownEditingCommands.PrefixLines(Text, SelectionStart, SelectionLength, new string('#', e.Key - Key.D1 + 1) + " ")); e.Handled = true; return; }
+            if (key == Key.L) { ApplyEdit(MarkdownEditingCommands.ToggleTasks(Text, SelectionStart, SelectionLength)); return true; }
+            if (key == Key.Enter) { OpenLinkAtCaret(); return true; }
+            if (key is Key.OemOpenBrackets or Key.OemCloseBrackets)
+            { ApplyEdit(MarkdownEditingCommands.IndentLines(Text, SelectionStart, SelectionLength, key == Key.OemOpenBrackets)); return true; }
+            if (key >= Key.D1 && key <= Key.D6)
+            { ApplyEdit(MarkdownEditingCommands.PrefixLines(Text, SelectionStart, SelectionLength, new string('#', key - Key.D1 + 1) + " ")); return true; }
         }
         if (modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
-            if (e.Key == Key.V) { ApplicationCommands.Paste.Execute(null, TextArea); e.Handled = true; return; }
-            if (e.Key is Key.D7 or Key.D8 or Key.OemPeriod)
-            { ApplyEdit(MarkdownEditingCommands.PrefixLines(Text, SelectionStart, SelectionLength, e.Key == Key.D7 ? "1. " : e.Key == Key.D8 ? "- " : "> ")); e.Handled = true; return; }
-            if (e.Key == Key.T) { InsertTable(); e.Handled = true; return; }
-            if (e.Key == Key.K)
+            if (key == Key.V) { ApplicationCommands.Paste.Execute(null, TextArea); return true; }
+            if (key is Key.D7 or Key.D8 or Key.OemPeriod)
+            { ApplyEdit(MarkdownEditingCommands.PrefixLines(Text, SelectionStart, SelectionLength, key == Key.D7 ? "1. " : key == Key.D8 ? "- " : "> ")); return true; }
+            if (key == Key.T) { InsertTable(); return true; }
+            if (key == Key.K)
             {
-                var line = Document.GetLineByOffset(CaretOffset); Document.Remove(line.Offset, line.TotalLength); e.Handled = true; return;
+                ApplyEdit(MarkdownEditingCommands.DeleteLines(Text, SelectionStart, SelectionLength)); return true;
             }
-            if (e.Key == Key.Z) { Document.UndoStack.Redo(); e.Handled = true; return; }
+            if (key == Key.Z) { Document.UndoStack.Redo(); return true; }
         }
-        if (e.Key == Key.Enter && modifiers == ModifierKeys.None && SelectionLength == 0 &&
+        if (key == Key.Enter && modifiers == ModifierKeys.None && SelectionLength == 0 &&
             !_blocks.Any(block => block.IsCode && CaretOffset >= block.Start && CaretOffset <= block.Start + block.Length))
-        { ApplyEdit(MarkdownEditingCommands.ContinueLine(Text, CaretOffset)); e.Handled = true; }
-        if (e.Key == Key.Tab && modifiers is ModifierKeys.None or ModifierKeys.Shift)
+        { ApplyEdit(MarkdownEditingCommands.ContinueLine(Text, CaretOffset)); return true; }
+        if (key == Key.Tab && modifiers is ModifierKeys.None or ModifierKeys.Shift)
         {
             if (!MoveTableCell(modifiers == ModifierKeys.Shift)) ApplyEdit(MarkdownEditingCommands.Indent(Text, SelectionStart, SelectionLength, modifiers == ModifierKeys.Shift));
-            e.Handled = true;
+            return true;
         }
+        return false;
+    }
+
+    private int WordBoundary(bool forward)
+    {
+        // Navigate the source document, not a preview's single visual object.
+        // This prevents Ctrl+Delete from removing a whole neighbouring rendered block.
+        var offset = CaretOffset;
+        if (forward) while (offset < Text.Length && char.IsWhiteSpace(Text[offset])) offset++;
+        else while (offset > 0 && char.IsWhiteSpace(Text[offset - 1])) offset--;
+        var next = ICSharpCode.AvalonEdit.Document.TextUtilities.GetNextCaretPosition(Document, offset,
+            forward ? LogicalDirection.Forward : LogicalDirection.Backward, ICSharpCode.AvalonEdit.Document.CaretPositioningMode.WordBorder);
+        return next < 0 ? forward ? Text.Length : 0 : next;
     }
 
     internal void InsertTable()
@@ -188,6 +228,17 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         const string table = "| Заголовок 1 | Заголовок 2 |\n| --- | --- |\n|  |  |\n";
         var prefix = SelectionStart > 0 && Text[SelectionStart - 1] != '\n' ? "\n\n" : "";
         ApplyEdit(new(SelectionStart, SelectionLength, prefix + table, prefix.Length + 2, 11));
+    }
+
+    internal bool OpenLinkAtCaret()
+    {
+        var parsed = Markdig.Markdown.Parse(Text, _pipeline);
+        var link = parsed.Descendants().FirstOrDefault(item => item.Span.Start <= CaretOffset && item.Span.End >= CaretOffset &&
+            item is WikiLinkInline or LinkInline or AutolinkInline);
+        if (link is WikiLinkInline wiki) { OpenNoteRequested?.Invoke(wiki.Destination); return true; }
+        var url = link switch { LinkInline { IsImage: false } web => web.Url, AutolinkInline { IsEmail: false } auto => auto.Url, _ => null };
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")) return false;
+        OpenWebLinkRequested?.Invoke(uri); return true;
     }
 
     internal void InsertCodeBlock()
@@ -233,7 +284,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         Add("Блок кода", InsertCodeBlock);
         Add("Зачёркнутый", () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "~~")));
         Add("Выделить маркером", () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "==")));
-        Add("Задача — Ctrl+Enter", () => ApplyEdit(MarkdownEditingCommands.ToggleTask(Text, CaretOffset)));
+        Add("Задача — Ctrl+L", () => ApplyEdit(MarkdownEditingCommands.ToggleTasks(Text, SelectionStart, SelectionLength)));
         Add("Таблица — Ctrl+Shift+T", InsertTable);
         menu.Items.Add(formatting);
     }

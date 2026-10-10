@@ -128,6 +128,12 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
             () => DeleteNote(id));
         var services = _services!;
         var window = new NoteWindow(vm, services.GetRequiredService<IWindowLayerController>(), services.GetRequiredService<IMarkdownRenderer>());
+        window.NewNoteRequested = CreateNote;
+        window.SaveRequested = () =>
+        {
+            logger.Write(AppLogLevel.Information, "Storage.SaveRequested", "Keyboard shortcut Ctrl+S");
+            _ = _save.FlushAsync();
+        };
         logger.Write(AppLogLevel.Information, "Window.Created", $"noteId={id}");
         _windows.Add(id, window);
         _board?.Attach(window);

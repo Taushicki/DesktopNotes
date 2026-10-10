@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Input;
 using DesktopNotes.Application;
 using DesktopNotes.Domain;
 using DesktopNotes.Presentation;
@@ -12,6 +13,77 @@ namespace DesktopNotes.Tests;
 
 public sealed class LiveEditorTests
 {
+    [Fact]
+    public Task BuiltInNavigationAndSelectionWorkWithLivePreview() => OnSta(() =>
+    {
+        const string source = "one two\nthree four\n\n# heading";
+        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = source };
+        var host = new Window { Content = editor, Left = -10000, Top = -10000, Width = 320, Height = 280, ShowActivated = false, ShowInTaskbar = false };
+        try
+        {
+            host.Show(); Keyboard.Focus(editor.TextArea); host.UpdateLayout();
+            EditingCommands.MoveToDocumentEnd.Execute(null, editor.TextArea); Assert.Equal(source.Length, editor.CaretOffset);
+            EditingCommands.SelectToDocumentStart.Execute(null, editor.TextArea); Assert.Equal(source, editor.SelectedText);
+            editor.Select(0, 0); EditingCommands.MoveToLineEnd.Execute(null, editor.TextArea); Assert.Equal(7, editor.CaretOffset);
+            EditingCommands.SelectToLineStart.Execute(null, editor.TextArea); Assert.Equal("one two", editor.SelectedText);
+            editor.Select(0, 0); EditingCommands.SelectDownByLine.Execute(null, editor.TextArea); Assert.Equal("one two\n", editor.SelectedText);
+            Assert.Equal(source, editor.Text);
+            Assert.True(editor.HandleEscape()); Assert.Equal(0, editor.SelectionLength);
+        }
+        finally { host.Close(); }
+    });
+
+    [Fact]
+    public Task ObsidianTaskAndLinkShortcutsAreDistinctAndUndoable() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = "  - first\n  - [ ] second\n\n[[Target|caption]]\n\n[web](https://example.com)" };
+        editor.Select(0, editor.Text.IndexOf("\n\n", StringComparison.Ordinal));
+        Assert.True(editor.HandleShortcut(Key.L, ModifierKeys.Control));
+        Assert.StartsWith("  - [ ] first\n  - [x] second", editor.Text);
+        editor.Undo(); Assert.StartsWith("  - first\n  - [ ] second", editor.Text);
+        string? note = null; Uri? url = null;
+        editor.OpenNoteRequested += value => note = value;
+        editor.OpenWebLinkRequested += value => url = value;
+        editor.Select(editor.Text.IndexOf("caption", StringComparison.Ordinal), 0);
+        var before = editor.Text;
+        Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.Control));
+        Assert.Equal("Target", note); Assert.Equal(before, editor.Text);
+        editor.Select(editor.Text.IndexOf("web", StringComparison.Ordinal), 0);
+        editor.HandleShortcut(Key.Enter, ModifierKeys.Control); Assert.Equal("https://example.com/", url?.AbsoluteUri);
+        editor.Text = "[file](file:///C:/private.txt)"; editor.Select(2, 0); url = null;
+        Assert.False(editor.OpenLinkAtCaret()); Assert.Null(url);
+        editor.Text = "`[[Target]]`"; editor.Select(5, 0); note = null;
+        Assert.False(editor.OpenLinkAtCaret()); Assert.Null(note);
+    });
+
+    [Fact]
+    public Task WordShortcutsOperateOnSourceAcrossRenderedBlocks() => OnSta(() =>
+    {
+        const string source = "first\n\nsecond third";
+        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = source };
+        editor.Select(0, 0);
+        Assert.True(editor.HandleShortcut(Key.Right, ModifierKeys.Control)); Assert.Equal(5, editor.CaretOffset);
+        editor.HandleShortcut(Key.Right, ModifierKeys.Control | ModifierKeys.Shift); Assert.Equal("\n\nsecond", editor.SelectedText);
+        editor.HandleShortcut(Key.Left, ModifierKeys.Control | ModifierKeys.Shift); Assert.Equal("\n\n", editor.SelectedText);
+        editor.Select(5, 0); editor.HandleShortcut(Key.Delete, ModifierKeys.Control);
+        Assert.Equal("first third", editor.Text); editor.Undo(); Assert.Equal(source, editor.Text);
+        editor.Select(editor.Text.Length, 0); editor.HandleShortcut(Key.Back, ModifierKeys.Control);
+        Assert.Equal("first\n\nsecond ", editor.Text);
+    });
+
+    [Fact]
+    public Task LineShortcutsRespectExclusiveSelectionAndCRLF() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = "one\r\ntwo\r\nthree" };
+        editor.Select(5, 0); editor.HandleShortcut(Key.OemCloseBrackets, ModifierKeys.Control);
+        Assert.Equal("one\r\n  two\r\nthree", editor.Text);
+        editor.HandleShortcut(Key.OemOpenBrackets, ModifierKeys.Control); Assert.Equal("one\r\ntwo\r\nthree", editor.Text);
+        editor.Select(0, 5); editor.HandleShortcut(Key.K, ModifierKeys.Control | ModifierKeys.Shift);
+        Assert.Equal("two\r\nthree", editor.Text); editor.Undo();
+        editor.Select(editor.Text.Length, 0); editor.HandleShortcut(Key.K, ModifierKeys.Control | ModifierKeys.Shift);
+        Assert.Equal("one\r\ntwo", editor.Text); editor.Undo(); Assert.EndsWith("three", editor.Text);
+    });
+
     [Theory]
     [InlineData("first\nsecond\n")]
     [InlineData("first\r\nsecond\r\n\r\nthird")]

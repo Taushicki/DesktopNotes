@@ -21,6 +21,27 @@ public sealed class WindowsInteractionTests
     private sealed class Layers : IWindowLayerController { public void Apply(nint handle, WindowLayer layer) { } }
 
     [Fact]
+    public Task NoteShortcutsCreateSaveAndHideWithoutDeleting() => OnStaThread(() =>
+    {
+        var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
+        using var vm = new NoteViewModel(note, notes, () => { }, () => { });
+        var host = new NoteWindow(vm, new Layers(), new MarkdownRenderer());
+        var created = 0; var saved = 0;
+        host.NewNoteRequested = () => created++;
+        host.SaveRequested = () => saved++;
+        try
+        {
+            Assert.True(host.HandleWindowShortcut(System.Windows.Input.Key.N, System.Windows.Input.ModifierKeys.Control));
+            Assert.True(host.HandleWindowShortcut(System.Windows.Input.Key.S, System.Windows.Input.ModifierKeys.Control));
+            Assert.Equal(1, created); Assert.Equal(1, saved);
+            Assert.False(host.HandleWindowShortcut(System.Windows.Input.Key.N, System.Windows.Input.ModifierKeys.Alt));
+            Assert.True(host.HandleWindowShortcut(System.Windows.Input.Key.W, System.Windows.Input.ModifierKeys.Control));
+            Assert.True(notes.Get(note.Id).IsHidden); Assert.Single(notes.Notes);
+        }
+        finally { host.ClosePermanently(); }
+    });
+
+    [Fact]
     public Task ToolbarBoldPreservesSelectionAndUndoWithoutChangingWholeNoteStyle() => OnStaThread(() =>
     {
         var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
