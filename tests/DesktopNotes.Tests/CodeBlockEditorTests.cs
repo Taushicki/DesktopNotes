@@ -129,6 +129,79 @@ public sealed class CodeBlockEditorTests
         finally { host.Close(); }
     });
 
+    [Theory]
+    [InlineData("# Название\nТекст\n")]
+    [InlineData("# Название\r\n\r\nТекст\r\n")]
+    public Task TypingFenceAfterTextImmediatelyAcceptsCodeAndBackspace(string prefix) => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = prefix };
+        editor.EnableNoteTitle(); editor.Select(editor.Text.Length, 0);
+        var host = new Window { Content = editor, Width = 330, Height = 350, Left = -10000, Top = -10000, ShowActivated = false, ShowInTaskbar = false };
+        try
+        {
+            host.Show(); host.UpdateLayout();
+            editor.TextArea.PerformTextInput("```"); host.UpdateLayout();
+            var opening = Assert.Single(editor.Layout.CodeFrames);
+            Assert.Equal(prefix.Length, opening.Start);
+            Assert.False(opening.HasClosingFence);
+            Assert.Null(opening.ClosingStart);
+            Assert.DoesNotContain(editor.Layout.Decorations, part => part.Kind == InlineMarkdownLayout.DecorationKind.Hidden && part.Start == prefix.Length);
+            editor.TextArea.PerformTextInput("python"); host.UpdateLayout();
+            Assert.EndsWith("```python", editor.Text);
+            Assert.DoesNotContain(editor.Layout.Decorations, part => part.Kind == InlineMarkdownLayout.DecorationKind.Hidden && part.Start == prefix.Length);
+            Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.None)); host.UpdateLayout();
+            var frame = Assert.Single(editor.Layout.CodeFrames);
+            Assert.True(frame.HasClosingFence);
+            Assert.Equal(frame.ContentStart, editor.CaretOffset);
+            Assert.True(frame.ClosingStart >= frame.ContentStart);
+            Assert.True(editor.Document.GetLineByOffset(frame.End - 1).LineNumber - editor.Document.GetLineByOffset(frame.Start).LineNumber >= 2);
+            var view = editor.TextArea.TextView;
+            var firstRow = editor.Document.GetLineByOffset(frame.Start).LineNumber;
+            var lastRow = editor.Document.GetLineByOffset(frame.End - 1).LineNumber;
+            var bottom = lastRow < editor.Document.LineCount ? view.GetVisualTopByDocumentLine(lastRow + 1) : view.DocumentHeight;
+            Assert.True(bottom - view.GetVisualTopByDocumentLine(firstRow) >= 40);
+            editor.TextArea.PerformTextInput("code"); host.UpdateLayout();
+            Assert.Equal("code", editor.Document.GetText(editor.Document.GetLineByOffset(editor.CaretOffset)));
+            editor.Select(frame.ContentStart!.Value, 0);
+            Assert.True(editor.HandleShortcut(Key.Back, ModifierKeys.None));
+            Assert.Equal(prefix + "code" + (prefix.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n"), editor.Text);
+        }
+        finally { host.Close(); }
+    });
+
+    [Theory]
+    [InlineData("```\n```")]
+    [InlineData("```\r\n```")]
+    [InlineData("# Название\nТекст\n```\n```")]
+    [InlineData("# Название\nТекст\n```\n```\n")]
+    [InlineData("# Название\nТекст\n```\n")]
+    [InlineData("```\n")]
+    [InlineData("```python")]
+    [InlineData("# Название\nТекст\n```python")]
+    public Task EmptyAndUnfinishedBlocksHaveOrderedBoundariesAndUnwrapSafely(string source) => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = source };
+        var frame = Assert.Single(editor.Layout.CodeFrames);
+        Assert.True(frame.ContentStart <= (frame.ClosingStart ?? frame.End), $"Invalid frame: {frame}");
+        editor.Select(frame.ContentStart!.Value, 0);
+        Assert.True(editor.HandleShortcut(Key.Back, ModifierKeys.None));
+        editor.Undo(); Assert.Equal(source, editor.Text);
+    });
+
+    [Fact]
+    public void CodeFrameRangesStayOrderedAcrossFenceEditingStates()
+    {
+        foreach (var prefix in new[] { "", "Text\n", "# Title\n\nText\n", "> ", "- ", "- item\n  " })
+        foreach (var opening in new[] { "```", "~~~", "```csharp", "````", "  ```", "``` ```", "``````" })
+        foreach (var suffix in new[] { "", "\n", "\n\n", "code", "\n```", "\n```\n", "\n  ```", "\n~~~", "\n`", "\n  " })
+        {
+            var source = prefix + opening + suffix;
+            var layout = InlineMarkdownLayout.Create(source, Markdig.Markdown.Parse(source, MarkdownPipelines.Create()));
+            foreach (var frame in layout.CodeFrames)
+                Assert.True(frame.ContentStart is null || frame.ContentStart <= (frame.ClosingStart ?? frame.End), $"{source.Replace("\n", "\\n", StringComparison.Ordinal)}: {frame}");
+        }
+    }
+
     private static Task OnSta(Action action)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

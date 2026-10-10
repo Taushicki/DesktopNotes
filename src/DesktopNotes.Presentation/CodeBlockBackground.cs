@@ -16,6 +16,7 @@ internal sealed class CodeBlockBackground(LiveMarkdownEditor editor) : IBackgrou
         if (!textView.VisualLinesValid || textView.ActualWidth <= 2) return;
         foreach (var frame in editor.Layout.CodeFrames)
         {
+            if (!frame.HasClosingFence && frame.ContentStart >= frame.End) continue;
             var lines = textView.VisualLines.Where(line => line.FirstDocumentLine.Offset < frame.End && line.LastDocumentLine.EndOffset >= frame.Start).ToArray();
             if (lines.Length == 0) continue;
             var first = editor.Document.GetLineByOffset(frame.Start);

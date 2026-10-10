@@ -55,19 +55,27 @@ internal sealed class InlineMarkdownLayout
                 {
                     var openingEnd = source.IndexOf('\n', first); if (openingEnd < 0) openingEnd = source.Length;
                     contentStart = Math.Min(source.Length, openingEnd + 1);
+                    // Markdig's opening-fence span can omit the language/info text.
+                    // The editable body must never start beyond the frame's end.
+                    end = Math.Max(end, contentStart.Value);
                     var openingLength = source[first..openingEnd].TrimEnd('\r').Length;
-                    if (openingLength > 0) Decorations.Add(new(first, openingLength, DecorationKind.Hidden));
+                    // Keep an unfinished opening line visible until Enter creates
+                    // a body row; typing a language must not disappear into a frame.
+                    if (openingLength > 0 && openingEnd < source.Length) Decorations.Add(new(first, openingLength, DecorationKind.Hidden));
                     if (fenced.ClosingFencedCharCount > 0)
                     {
                         var closing = source.LastIndexOf('\n', Math.Max(first, end - 1)) + 1;
-                        closingStart = closing;
-                        // Markdig's span ends at the closing fence, excluding its newline.
-                        var closingEnd = source.IndexOf('\n', closing); if (closingEnd < 0) closingEnd = source.Length;
-                        var closingLength = source[closing..closingEnd].TrimEnd('\r').Length;
-                        if (closingLength > 0 && closing != first) Decorations.Add(new(closing, closingLength, DecorationKind.Hidden));
+                        if (closing >= contentStart && closing < end)
+                        {
+                            closingStart = closing;
+                            // Markdig's span ends at the closing fence, excluding its newline.
+                            var closingEnd = source.IndexOf('\n', closing); if (closingEnd < 0) closingEnd = source.Length;
+                            var closingLength = source[closing..closingEnd].TrimEnd('\r').Length;
+                            if (closingLength > 0) Decorations.Add(new(closing, closingLength, DecorationKind.Hidden));
+                        }
                     }
                 }
-                CodeFrames.Add(new(first, end, code is FencedCodeBlock { ClosingFencedCharCount: > 0 }, contentStart, closingStart));
+                CodeFrames.Add(new(first, end, closingStart is not null, contentStart, closingStart));
                 continue;
             }
             if (block is Markdig.Extensions.Tables.Table table) DecorateTable(table, source);
