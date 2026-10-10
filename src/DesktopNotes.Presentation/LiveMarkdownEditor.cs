@@ -148,6 +148,14 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     }
     internal bool HandleShortcut(Key key, ModifierKeys modifiers)
     {
+        if (key == Key.Enter && modifiers == ModifierKeys.Shift)
+        {
+            // Handle this before AvalonEdit's indentation strategy: Shift+Enter
+            // inserts only a newline, regardless of the surrounding Markdown.
+            var newline = Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+            ApplyEdit(new(SelectionStart, SelectionLength, newline, newline.Length, 0));
+            return true;
+        }
         if ((modifiers is ModifierKeys.Control or (ModifierKeys.Control | ModifierKeys.Shift)) && key is Key.Left or Key.Right)
         {
             var anchor = SelectionLength > 0 && CaretOffset == SelectionStart ? SelectionStart + SelectionLength : SelectionStart;

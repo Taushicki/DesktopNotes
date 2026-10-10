@@ -13,6 +13,47 @@ namespace DesktopNotes.Tests;
 
 public sealed class LiveEditorTests
 {
+    [Theory]
+    [InlineData("- item")]
+    [InlineData("- ")]
+    [InlineData("  - nested")]
+    [InlineData("1. item")]
+    [InlineData("- [ ] task")]
+    [InlineData("- [x] task")]
+    [InlineData("> quote")]
+    [InlineData("# heading")]
+    [InlineData("plain text")]
+    [InlineData("| first | second |")]
+    [InlineData("```\n  code")]
+    [InlineData("first\r\n- item")]
+    public Task ShiftEnterInsertsOnlyNewlineInEveryContext(string source) => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = source };
+        editor.Select(source.Length, 0);
+        var newline = source.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.Shift));
+        Assert.Equal(source + newline, editor.Text);
+        Assert.Equal(editor.Text.Length, editor.CaretOffset);
+        Assert.Equal(0, editor.SelectionLength);
+        editor.Undo(); Assert.Equal(source, editor.Text);
+        editor.Redo(); Assert.Equal(source + newline, editor.Text);
+    });
+
+    [Fact]
+    public Task ShiftEnterReplacesSelectionAndEnterStillContinuesStructures() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = "- first second" };
+        editor.Select(7, 7);
+        Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.Shift));
+        Assert.Equal("- first\n", editor.Text); Assert.Equal(8, editor.CaretOffset);
+        editor.Undo(); Assert.Equal("- first second", editor.Text);
+        foreach (var (source, expected) in new[] { ("- item", "- item\n- "), ("1. item", "1. item\n2. "), ("- [x] task", "- [x] task\n- [ ] "), ("> quote", "> quote\n> ") })
+        {
+            editor.Text = source; editor.Select(source.Length, 0);
+            Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.None)); Assert.Equal(expected, editor.Text);
+        }
+    });
+
     [Fact]
     public Task BuiltInNavigationAndSelectionWorkWithLivePreview() => OnSta(() =>
     {
