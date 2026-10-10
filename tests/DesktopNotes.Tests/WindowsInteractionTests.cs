@@ -485,6 +485,39 @@ public sealed class WindowsInteractionTests
         Assert.True(pixels[(50 * 200 + 176) * 4 + 3] > 0);
         Assert.Equal(0, pixels[(5 * 200 + 5) * 4 + 3]);
     });
+    [Fact]
+    public Task CollapsingColumnUpdatesRealWindowsAndKeepsExpandedHeights() => OnStaThread(() =>
+    {
+        var notes = new NoteService(new Repository());
+        var column = Enumerable.Range(0, 3).Select(i => new Note { X = 100, Y = 40 + i * 140, Height = 140 }).ToArray();
+        foreach (var note in column) notes.Update(note);
+        var models = column.Select(note => new NoteViewModel(note, notes, () => { }, () => { })).ToArray();
+        var windows = models.Select(vm => new NoteWindow(vm, new Layers()) { ShowActivated = false }).ToArray();
+        try
+        {
+            foreach (var window in windows) { window.Show(); window.UpdateLayout(); }
+            models[0].ToggleCollapsed.Execute(null);
+            foreach (var window in windows) window.UpdateLayout();
+            Assert.True(models[0].IsCollapsed);
+            Assert.Equal(Note.CollapsedHeight, windows[0].Height, 1);
+            Assert.Equal(84, windows[1].Top, 1);
+            Assert.Equal(224, windows[2].Top, 1);
+            models[0].ToggleCollapsed.Execute(null);
+            foreach (var window in windows) window.UpdateLayout();
+            for (var i = 0; i < windows.Length; i++)
+            {
+                Assert.Equal(column[i].Y, windows[i].Top, 1);
+                Assert.Equal(140, windows[i].Height, 1);
+                Assert.Equal(140, notes.Get(column[i].Id).Height, 1);
+            }
+        }
+        finally
+        {
+            foreach (var window in windows) window.ClosePermanently();
+            foreach (var model in models) model.Dispose();
+        }
+    });
+
     private static Task OnStaThread(Action action)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

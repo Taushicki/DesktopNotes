@@ -7,6 +7,7 @@ public enum NoteVerticalAlignment { Top, Center, Bottom }
 
 public sealed record Note
 {
+    public const double CollapsedHeight = 44;
     public Guid Id { get; init; } = Guid.NewGuid();
     public string Title { get; init; } = "Новая заметка";
     public string Markdown { get; init; } = "";

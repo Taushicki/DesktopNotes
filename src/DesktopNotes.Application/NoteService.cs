@@ -70,8 +70,25 @@ public sealed class NoteService(INoteRepository repository)
         note = note with { Title = previous is null || previous.Markdown != note.Markdown
             ? MarkdownNoteTitle.Read(note.Markdown, fallback) : previous.Title };
         if (previous == note) return;
-        _notes[note.Id] = note;
-        NoteUpdated?.Invoke(note);
+        if (previous is null || previous.IsCollapsed == note.IsCollapsed)
+        {
+            // Text edits and dragging do not need a board-layout calculation.
+            _notes[note.Id] = note;
+            NoteUpdated?.Invoke(note);
+            Changed?.Invoke();
+            return;
+        }
+        var followers = NoteStackLayout.AttachedBelow(previous, Notes);
+        // Pinned notes (including a pinned member of a moved note's group)
+        // must not change position as a side effect of resizing another note.
+        if (followers.Any(follower => follower.IsPinned ||
+            GroupOf(follower.Id) is { } group && group.NoteIds.Any(id => _notes[id].IsPinned))) return;
+        var delta = NoteStackLayout.VisibleHeight(note) - NoteStackLayout.VisibleHeight(previous);
+        var updates = followers.Select(follower => follower with { Y = follower.Y + delta }).Prepend(note).ToArray();
+        foreach (var update in updates) update.Validate();
+        // Publish the complete layout before notifying windows or autosave.
+        foreach (var update in updates) _notes[update.Id] = update;
+        foreach (var update in updates) NoteUpdated?.Invoke(update);
         Changed?.Invoke();
     }
 

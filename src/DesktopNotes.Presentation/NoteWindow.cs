@@ -262,8 +262,8 @@ public sealed class NoteWindow : Window
             _captionRow.Height = new GridLength(_vm.IsCollapsed ? 34 : 0);
             _titleArea.Height = _vm.IsCollapsed ? 34 : 6;
             _root.Margin = new Thickness(_vm.IsCollapsed ? 5 : 7.5);
-            MinHeight = _vm.IsCollapsed ? 44 : 140;
-            Height = _vm.IsCollapsed ? 44 : _vm.Snapshot.Height;
+            MinHeight = _vm.IsCollapsed ? Note.CollapsedHeight : 140;
+            Height = _vm.IsCollapsed ? Note.CollapsedHeight : _vm.Snapshot.Height;
             ResizeMode = _vm.IsCollapsed ? ResizeMode.NoResize : ResizeMode.CanResize;
             ApplyLayer();
         }
@@ -332,7 +332,7 @@ public sealed class NoteWindow : Window
             if (Left != note.X) Left = note.X;
             if (Top != note.Y) Top = note.Y;
             if (Width != note.Width) Width = note.Width;
-            if (Height != (note.IsCollapsed ? 44 : note.Height)) Height = note.IsCollapsed ? 44 : note.Height;
+            if (Height != (note.IsCollapsed ? Note.CollapsedHeight : note.Height)) Height = note.IsCollapsed ? Note.CollapsedHeight : note.Height;
         }
         finally { _updatingLayout = false; }
     }
