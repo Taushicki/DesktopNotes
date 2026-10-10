@@ -80,7 +80,7 @@ public sealed class NoteWindow : Window
         Grid.SetRowSpan(header, 2);
         Panel.SetZIndex(header, 1);
         header.ColumnDefinitions.Add(new ColumnDefinition());
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(30.5) });
         _titleArea = new Border
         {
             Background = Brushes.Transparent, Padding = new Thickness(8, 0, 4, 0), Focusable = true,
@@ -110,11 +110,14 @@ public sealed class NoteWindow : Window
         };
         collapse.Content = _collapseIcon;
         collapse.Command = vm.ToggleCollapsed;
-        collapse.VerticalAlignment = VerticalAlignment.Center;
+        // Keep the button relative to the note edge, independent of the
+        // collapsed title area's tighter content margins.
+        collapse.VerticalAlignment = VerticalAlignment.Top;
+        collapse.HorizontalAlignment = HorizontalAlignment.Right;
+        collapse.Margin = new Thickness(0, 8, 7.5, 0);
         collapse.Height = 28;
         collapse.Width = 28;
         collapse.Padding = new Thickness(0);
-        Grid.SetColumn(collapse, 1); header.Children.Add(collapse);
         root.Children.Add(header);
 
         _editor = new LiveMarkdownEditor() { Text = vm.Markdown, ContextMenu = ContextMenu, IsReadOnly = true };
@@ -139,6 +142,7 @@ public sealed class NoteWindow : Window
         Grid.SetRow(_body, 1); root.Children.Add(_body);
         var shell = new Grid();
         shell.Children.Add(root);
+        shell.Children.Add(collapse);
         shell.Children.Add(_frame);
         shell.Children.Add(_connectionFrame);
         _linkHandles = new EdgeLinkHandles(this,
