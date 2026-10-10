@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DesktopNotes.Application/DesktopNotes.Application.csproj" />
+    <Project Path="src/DesktopNotes.Domain/DesktopNotes.Domain.csproj" />
+    <Project Path="src/DesktopNotes.Infrastructure/DesktopNotes.Infrastructure.csproj" />
+    <Project Path="src/DesktopNotes.Presentation/DesktopNotes.Presentation.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DesktopNotes.Tests/DesktopNotes.Tests.csproj" />
+  </Folder>
+</Solution>
