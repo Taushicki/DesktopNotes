@@ -43,6 +43,10 @@ internal static class NativeWindows
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(nint window, nint after, int x, int y, int width, int height, uint flags);
 
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(nint window);
+    public static void Activate(nint window) => SetForegroundWindow(window);
+
     public static ScreenRect Rect(nint window) { GetWindowRect(window, out var rectangle); return rectangle; }
     public static (int X, int Y) Cursor() { GetCursorPos(out var point); return (point.X, point.Y); }
     public static nint ForegroundOwner() => GetAncestor(GetForegroundWindow(), 3);

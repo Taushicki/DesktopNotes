@@ -58,6 +58,7 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
     private NoteService _notes = null!;
     private AutosaveCoordinator _save = null!;
     private Forms.NotifyIcon? _tray;
+    private TrayMenu? _trayMenu;
     private Window? _settings;
     private bool _exiting;
     private bool _saveError;
@@ -150,7 +151,7 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
     private void DeleteNote(Guid id)
     {
         if (NoteDeletionPolicy.RequiresConfirmation(_notes.Get(id).Markdown) &&
-            System.Windows.MessageBox.Show(_windows[id], "Удалить заметку без возможности восстановления?", "DesktopNotes", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) return;
+            new DeleteConfirmationWindow(NoteThemes.Get(_notes.Get(id).Color)) { Owner = _windows[id] }.ShowDialog() != true) return;
         _notes.Delete(id);
         _board?.Detach(_windows[id]);
         _windows[id].ClosePermanently();
@@ -166,19 +167,13 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
 
     private void CreateTray()
     {
-        var menu = new Forms.ContextMenuStrip();
-        menu.Opening += (_, _) =>
+        _trayMenu = new TrayMenu(CreateNote, ShowNotes, OpenSettings, () => _save.FlushAsync(), ExitAsync);
+        _tray = new Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Information, Visible = true };
+        _tray.MouseUp += (_, e) =>
         {
-            foreach (Forms.ToolStripItem item in menu.Items.Cast<Forms.ToolStripItem>().ToArray()) item.Dispose();
-            menu.Items.Clear();
-            menu.Items.Add("Создать заметку", null, (_, _) => CreateNote());
-            menu.Items.Add("Показать все", null, (_, _) => ShowNotes());
-            menu.Items.Add("Настройки", null, (_, _) => OpenSettings());
-            if (_saveError) menu.Items.Add("Повторить сохранение", null, async (_, _) => await _save.FlushAsync());
-            menu.Items.Add(new Forms.ToolStripSeparator());
-            menu.Items.Add("Выход", null, async (_, _) => await ExitAsync());
+            if (e.Button == Forms.MouseButtons.Right && !_exiting)
+                _trayMenu.Open(WindowsAppTheme.IsDark, _saveError);
         };
-        _tray = new Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Information, ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => CreateNote();
     }
 
@@ -251,12 +246,11 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
         _board?.CommitSelection();
         foreach (var window in _windows.Values) window.SaveBounds();
         foreach (var window in _windows.Values) window.IsEnabled = false;
-        if (_tray?.ContextMenuStrip is not null) _tray.ContextMenuStrip.Enabled = false;
+        _trayMenu?.Close();
         if (!await _save.FlushAsync())
         {
             System.Windows.MessageBox.Show("Выход отменён: изменения не сохранены. Освободите место или восстановите доступ к папке, затем повторите выход.", "DesktopNotes", MessageBoxButton.OK, MessageBoxImage.Warning);
             foreach (var window in _windows.Values) window.IsEnabled = true;
-            if (_tray?.ContextMenuStrip is not null) _tray.ContextMenuStrip.Enabled = true;
             _exiting = false; return;
         }
         foreach (var window in _windows.Values) window.ClosePermanently();
@@ -286,7 +280,7 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
         DispatcherUnhandledException -= OnDispatcherException;
         SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
         _board?.Dispose();
-        _tray?.ContextMenuStrip?.Dispose();
+        _trayMenu?.Close();
         _tray?.Dispose();
         _instance?.Dispose();
         _services?.Dispose();

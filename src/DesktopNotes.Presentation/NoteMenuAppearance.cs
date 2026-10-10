@@ -16,17 +16,7 @@ internal static class NoteMenuAppearance
 
     internal static void Apply(ContextMenu menu, NoteTheme theme)
     {
-        var background = theme.IsDark ? theme.CodeFill : Brushes.White;
-        var foreground = theme.Foreground;
-        var border = theme.IsDark ? theme.CodeOutline.Brush : Brushes.Gainsboro;
-        var hover = theme.IsDark ? theme.Hover : Brushes.WhiteSmoke;
-        var muted = theme.IsDark ? Brushes.DarkGray : Brushes.SlateGray;
-        void Colours(ResourceDictionary resources)
-        {
-            resources["NoteMenuBackground"] = background; resources["NoteMenuForeground"] = foreground;
-            resources["NoteMenuBorder"] = border; resources["NoteMenuHover"] = hover; resources["NoteMenuMuted"] = muted;
-        }
-        Colours(menu.Resources);
+        ApplyResources(menu.Resources, theme);
         void StyleItems(ItemCollection items)
         {
             foreach (var item in items)
@@ -34,16 +24,25 @@ internal static class NoteMenuAppearance
                 if (item is MenuItem entry)
                 {
                     entry.Style = (Style)menu.Resources[typeof(MenuItem)];
-                    Colours(entry.Resources);
+                    ApplyResources(entry.Resources, theme);
                     StyleItems(entry.Items);
                 }
                 else if (item is Separator separator)
                 {
                     separator.Style = (Style)menu.Resources[typeof(Separator)];
-                    Colours(separator.Resources);
+                    ApplyResources(separator.Resources, theme);
                 }
             }
         }
         StyleItems(menu.Items);
     }
+    internal static void ApplyResources(ResourceDictionary resources, NoteTheme theme)
+    {
+        resources["NoteMenuBackground"] = theme.IsDark ? theme.CodeFill : Brushes.White;
+        resources["NoteMenuForeground"] = theme.Foreground;
+        resources["NoteMenuBorder"] = theme.IsDark ? theme.CodeOutline.Brush : Brushes.Gainsboro;
+        resources["NoteMenuHover"] = theme.IsDark ? theme.Hover : Brushes.WhiteSmoke;
+        resources["NoteMenuMuted"] = theme.IsDark ? Brushes.DarkGray : Brushes.SlateGray;
+    }
+
 }
