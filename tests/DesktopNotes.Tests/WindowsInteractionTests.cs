@@ -29,7 +29,6 @@ public sealed class WindowsInteractionTests
         try
         {
             var editor = host.MarkdownEditor;
-            editor.GetBindingExpression(TextBox.TextProperty)!.UpdateTarget();
             editor.ApplyTemplate(); editor.Measure(new Size(280, 200)); editor.Arrange(new Rect(0, 0, 280, 200));
             Assert.Equal("before word after", editor.Text);
             editor.Select(7, 4);
@@ -38,7 +37,7 @@ public sealed class WindowsInteractionTests
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.Equal("before **word** after", notes.Get(note.Id).Markdown);
             Assert.False(notes.Get(note.Id).IsBold); Assert.Equal("**word**", editor.SelectedText);
-            editor.Undo(); editor.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+            editor.Undo();
             Assert.Equal("before word after", notes.Get(note.Id).Markdown);
             editor.Select(7, 4); button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));

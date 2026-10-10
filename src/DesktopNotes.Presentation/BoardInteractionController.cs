@@ -68,6 +68,13 @@ internal sealed class BoardInteractionController : IDisposable
         window.LinkDragUpdated = UpdateLinkPreview;
         window.LinkDragCompleted = CompleteLink;
         window.CancelInteraction = CancelInteraction;
+        window.OpenNoteLink = destination =>
+        {
+            var note = Guid.TryParse(destination, out var id) ? _notes.Notes.FirstOrDefault(note => note.Id == id) :
+                _notes.Notes.FirstOrDefault(note => string.Equals(note.Title, destination, StringComparison.OrdinalIgnoreCase));
+            if (note is not null) _getWindow(note.Id).Reveal();
+            else MessageBox.Show(window, "Заметка не найдена: " + destination, "DesktopNotes");
+        };
         window.GeometryChanged += ScheduleRefresh;
         ScheduleRefresh();
     }
@@ -186,6 +193,14 @@ internal sealed class BoardInteractionController : IDisposable
 
     private void PopulateMenu(NoteWindow window, ContextMenu menu)
     {
+        var insertLink = new MenuItem { Header = "Вставить ссылку на заметку" };
+        foreach (var note in _notes.Notes.Where(note => note.Id != window.NoteId))
+        {
+            var item = new MenuItem { Header = string.IsNullOrWhiteSpace(note.Title) ? "Без названия" : note.Title };
+            item.Click += (_, _) => window.InsertNoteLink(note.Id, note.Title);
+            insertLink.Items.Add(item);
+        }
+        insertLink.IsEnabled = insertLink.Items.Count > 0; menu.Items.Add(insertLink);
         var group = _notes.GroupOf(window.NoteId);
         if (group is not null)
         {

@@ -17,11 +17,8 @@ public sealed class NoteWindow : Window
 {
     private readonly NoteViewModel _vm;
     private readonly IWindowLayerController _layers;
-    private readonly IMarkdownRenderer _markdown;
     private readonly Grid _body = new();
-    private readonly TextBox _editor;
-    private readonly FlowDocumentScrollViewer _viewer;
-    private readonly Button _preview;
+    private readonly LiveMarkdownEditor _editor;
     private readonly Border _titleArea;
     private readonly TextBlock _titleLabel;
     private readonly TextBox _titleEditor;
@@ -40,7 +37,7 @@ public sealed class NoteWindow : Window
     internal Action<NoteWindow>? InteractionDeactivated { get; set; }
     internal bool IsConnectionSelected => _linkHandles.IsSelected;
     internal NoteFormattingToolbar FormattingToolbar => _formatting;
-    internal TextBox MarkdownEditor => _editor;
+    internal LiveMarkdownEditor MarkdownEditor => _editor;
     internal bool OwnsInteractionWindow(nint handle) => handle != 0 &&
         (handle == Handle || NativeWindows.RootOwner(handle) == Handle || _formatting.OwnsWindow(handle));
     internal Action? CommitSelection { get; set; }
@@ -57,7 +54,7 @@ public sealed class NoteWindow : Window
 
     public NoteWindow(NoteViewModel vm, IWindowLayerController layers, IMarkdownRenderer markdown)
     {
-        _vm = vm; _layers = layers; _markdown = markdown;
+        _vm = vm; _layers = layers;
         DataContext = vm;
         Title = vm.Title;
         ShowInTaskbar = false;
@@ -134,32 +131,11 @@ public sealed class NoteWindow : Window
         Grid.SetColumn(collapse, 1); header.Children.Add(collapse);
         root.Children.Add(header);
 
-        _body.ColumnDefinitions.Add(new ColumnDefinition());
-        _body.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
-        _preview = MakeButton("", "Показать оформленный Markdown");
-        _preview.Content = CreateModeIcon(vm.IsPreview);
-        _preview.HorizontalAlignment = HorizontalAlignment.Center;
-        _preview.VerticalAlignment = VerticalAlignment.Top;
-        _preview.MinWidth = 14;
-        _preview.Width = 14;
-        _preview.Height = 14;
-        _preview.Padding = new Thickness(1.5);
-        AutomationProperties.SetName(_preview, "Показать оформленный Markdown");
-        _preview.Command = vm.TogglePreview;
-        Grid.SetColumn(_preview, 1);
-        _body.Children.Add(_preview);
-        _editor = new TextBox
-        {
-            AcceptsReturn = true, AcceptsTab = true, TextWrapping = TextWrapping.Wrap,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(8), FontSize = 14,
-            IsUndoEnabled = true, IsInactiveSelectionHighlightEnabled = true
-        };
-        _editor.SetBinding(TextBox.TextProperty, new Binding(nameof(vm.Markdown)) { Source = vm, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged });
-        _editor.ContextMenu = ContextMenu;
+        _editor = new LiveMarkdownEditor(markdown) { Text = vm.Markdown, ContextMenu = ContextMenu };
+        _editor.TextChanged += (_, _) => { if (_editor.Text != _vm.Markdown) _vm.Markdown = _editor.Text; };
+        _editor.OpenNoteRequested += destination => OpenNoteLink?.Invoke(destination);
+        _editor.ContentGeometryChanged += UpdateEditorHeight;
         _body.Children.Add(_editor);
-        _viewer = new FlowDocumentScrollViewer { Background = Brushes.Transparent, BorderThickness = new Thickness(0), VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, IsToolBarVisible = false, Visibility = Visibility.Collapsed, ContextMenu = ContextMenu };
-        _body.Children.Add(_viewer);
         Grid.SetRow(_body, 1); root.Children.Add(_body);
         var shell = new Grid();
         shell.Children.Add(root);
@@ -173,18 +149,14 @@ public sealed class NoteWindow : Window
         Content = shell;
         _formatting = new NoteFormattingToolbar(this, vm);
         ApplyTextFormatting();
-        _body.SizeChanged += (_, _) => UpdatePreviewHeight();
-        _viewer.Loaded += (_, _) =>
-        {
-            if (FindScrollViewer(_viewer) is { } scroll) scroll.ScrollChanged += (_, _) => UpdatePreviewHeight();
-            UpdatePreviewHeight();
-        };
+        _body.SizeChanged += (_, _) => UpdateEditorHeight();
         PreviewMouseDown += (_, _) =>
         {
             if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) == 0) CommitSelection?.Invoke();
         };
         PreviewMouseLeftButtonDown += (_, e) =>
         {
+            if (LiveMarkdownEditor.IsInteractivePreviewElement(e.OriginalSource as DependencyObject)) return;
             if ((System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) == 0)
             {
                 ConnectionClicked?.Invoke(this);
@@ -196,6 +168,7 @@ public sealed class NoteWindow : Window
         PreviewKeyDown += (_, e) =>
         {
             var key = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
+            if (key == System.Windows.Input.Key.Escape && _editor.HandleEscape()) { e.Handled = true; return; }
             if (key == System.Windows.Input.Key.Escape && (CancelInteraction?.Invoke() ?? false))
             {
                 _linkHandles.CancelDrag();
@@ -217,7 +190,7 @@ public sealed class NoteWindow : Window
         Activated += (_, _) => GeometryChanged?.Invoke();
         Deactivated += (_, _) => { if (_vm.Layer == WindowLayer.Background && !_closing) ApplyLayer(); GeometryChanged?.Invoke(); InteractionDeactivated?.Invoke(this); };
         Closing += (_, e) => { if (!_closing) { e.Cancel = true; vm.Hide.Execute(null); } };
-        Closed += (_, _) => { _formatting.Dispose(); _linkHandles.Dispose(); vm.PropertyChanged -= OnViewModelChanged; vm.Dispose(); _source?.RemoveHook(WindowMessages); };
+        Closed += (_, _) => { _editor.Dispose(); _formatting.Dispose(); _linkHandles.Dispose(); vm.PropertyChanged -= OnViewModelChanged; vm.Dispose(); _source?.RemoveHook(WindowMessages); };
     }
 
     private static Button MakeButton(string text, string accessibleName)
@@ -229,27 +202,12 @@ public sealed class NoteWindow : Window
 
     internal void ToggleBoldFormatting()
     {
-        if (_vm.IsPreview || _editor.SelectionLength == 0) { _vm.IsBold = !_vm.IsBold; return; }
-        var edit = MarkdownFormatting.ToggleBold(_editor.Text, _editor.SelectionStart, _editor.SelectionLength);
-        _editor.BeginChange();
-        try
-        {
-            _editor.Select(edit.Start, edit.Length);
-            _editor.SelectedText = edit.Replacement;
-            _editor.Select(edit.Start + edit.SelectionStart, edit.SelectionLength);
-        }
-        finally { _editor.EndChange(); }
-        _editor.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+        if (_editor.SelectionLength == 0) { _vm.IsBold = !_vm.IsBold; return; }
+        _editor.ToggleBoldSelection();
     }
 
-    private System.Windows.Shapes.Path CreateModeIcon(bool isPreview) => new()
-    {
-        Data = Geometry.Parse(isPreview
-            ? "M 12,5 C 9,3 5,2 1,3 L 1,19 C 5,18 9,19 12,21 C 15,19 19,18 23,19 L 23,3 C 19,2 15,3 12,5 L 12,21"
-            : "M 3,17 L 3,21 L 7,21 L 21,7 L 17,3 Z M 15,5 L 19,9 M 3,17 L 7,21"),
-        Stroke = Foreground, StrokeThickness = 0.8, StrokeLineJoin = PenLineJoin.Round,
-        Width = 10, Height = 10, Stretch = Stretch.Uniform, IsHitTestVisible = false
-    };
+    internal Action<string>? OpenNoteLink { get; set; }
+    internal void InsertNoteLink(Guid id, string title) => _editor.InsertNoteLink(id, title);
 
     private void BeginTitleEdit()
     {
@@ -283,6 +241,7 @@ public sealed class NoteWindow : Window
             item.Click += (_, _) => _vm.Layer = layer; layers.Items.Add(item);
         }
         menu.Items.Add(layers);
+        _editor?.AppendFormattingMenu(menu);
         PopulateBoardMenu?.Invoke(this, menu);
         menu.Items.Add(new Separator());
         menu.Items.Add(new MenuItem { Header = "Скрыть", Command = _vm.Hide });
@@ -297,16 +256,15 @@ public sealed class NoteWindow : Window
             case nameof(NoteViewModel.IsPinned): _titleArea.Cursor = _vm.IsPinned ? System.Windows.Input.Cursors.No : System.Windows.Input.Cursors.SizeAll; break;
             case nameof(NoteViewModel.FontSize): case nameof(NoteViewModel.IsBold):
             case nameof(NoteViewModel.TextAlignment): case nameof(NoteViewModel.VerticalAlignment):
-                ApplyTextFormatting(); if (_vm.IsPreview) RenderPreview(); break;
+                ApplyTextFormatting(); break;
             case nameof(NoteViewModel.Title): Title = _vm.Title; break;
-            case nameof(NoteViewModel.Markdown): if (_vm.IsPreview) RenderPreview(); break;
-            case nameof(NoteViewModel.IsPreview):
-                _preview.Content = CreateModeIcon(_vm.IsPreview);
-                _editor.Visibility = _vm.IsPreview ? Visibility.Collapsed : Visibility.Visible;
-                _viewer.Visibility = _vm.IsPreview ? Visibility.Visible : Visibility.Collapsed;
-                var previewAction = _vm.IsPreview ? "Редактировать Markdown" : "Показать оформленный Markdown";
-                AutomationProperties.SetName(_preview, previewAction);
-                if (_vm.IsPreview) RenderPreview(); else _editor.Focus();
+            case nameof(NoteViewModel.Markdown):
+                if (_editor.Text != _vm.Markdown)
+                {
+                    var caret = _editor.CaretOffset;
+                    _editor.Text = _vm.Markdown;
+                    _editor.CaretOffset = Math.Min(caret, _editor.Text.Length);
+                }
                 break;
             case nameof(NoteViewModel.Color): case nameof(NoteViewModel.IsCollapsed): ApplyState(); break;
             case nameof(NoteViewModel.Layer): ApplyLayer(); break;
@@ -337,11 +295,9 @@ public sealed class NoteWindow : Window
 
     private void ApplyTextFormatting()
     {
-        _editor.FontSize = _vm.FontSize;
-        _editor.FontWeight = _vm.IsBold ? FontWeights.Bold : FontWeights.Normal;
-        _editor.TextAlignment = TextAlignmentFor(_vm.TextAlignment);
-        _editor.VerticalContentAlignment = VerticalAlignmentFor(_vm.VerticalAlignment);
-        _viewer.VerticalAlignment = VerticalAlignmentFor(_vm.VerticalAlignment);
+        _editor.SetAppearance(_vm.Snapshot);
+        _editor.VerticalAlignment = VerticalAlignmentFor(_vm.VerticalAlignment);
+        UpdateEditorHeight();
     }
 
     internal static TextAlignment TextAlignmentFor(NoteTextAlignment alignment) => alignment switch
@@ -349,13 +305,6 @@ public sealed class NoteWindow : Window
         NoteTextAlignment.Justify => TextAlignment.Justify, _ => TextAlignment.Left };
     private static VerticalAlignment VerticalAlignmentFor(NoteVerticalAlignment alignment) => alignment switch
     { NoteVerticalAlignment.Center => VerticalAlignment.Center, NoteVerticalAlignment.Bottom => VerticalAlignment.Bottom, _ => VerticalAlignment.Top };
-
-    private void RenderPreview()
-    {
-        _viewer.Document = _markdown.Render(_vm.Markdown);
-        ApplyDocumentFormatting(_viewer.Document, _vm.Snapshot);
-        Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, UpdatePreviewHeight);
-    }
 
     internal static void ApplyDocumentFormatting(System.Windows.Documents.FlowDocument document, Note note)
     {
@@ -370,24 +319,17 @@ public sealed class NoteWindow : Window
                 if (note.IsBold) block.FontWeight = FontWeights.Bold;
                 if (block is System.Windows.Documents.Section section) Format(section.Blocks);
                 if (block is System.Windows.Documents.List list) foreach (var item in list.ListItems) Format(item.Blocks);
+                if (block is System.Windows.Documents.Table table) foreach (var group in table.RowGroups) foreach (var row in group.Rows) foreach (var cell in row.Cells) Format(cell.Blocks);
             }
         }
         Format(document.Blocks);
     }
 
-    private static ScrollViewer? FindScrollViewer(DependencyObject parent)
+    private void UpdateEditorHeight()
     {
-        if (parent is ScrollViewer scroll) return scroll;
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(parent); i++)
-            if (FindScrollViewer(VisualTreeHelper.GetChild(parent, i)) is { } found) return found;
-        return null;
-    }
-
-    private void UpdatePreviewHeight()
-    {
-        if (!_vm.IsPreview || _body.ActualHeight <= 0 || FindScrollViewer(_viewer) is not { } scroll || scroll.ExtentHeight <= 0) return;
-        var height = Math.Max(1, Math.Min(_body.ActualHeight, scroll.ExtentHeight));
-        if (double.IsNaN(_viewer.Height) || Math.Abs(_viewer.Height - height) > 0.5) _viewer.Height = height;
+        if (_body.ActualHeight <= 0 || _editor.ExtentHeight <= 0) return;
+        var height = Math.Max(1, Math.Min(_body.ActualHeight, _editor.ExtentHeight + _editor.Padding.Top + _editor.Padding.Bottom));
+        if (double.IsNaN(_editor.Height) || Math.Abs(_editor.Height - height) > 0.5) _editor.Height = height;
     }
 
     private void ApplySnapshotBounds()

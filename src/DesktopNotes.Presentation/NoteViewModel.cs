@@ -17,7 +17,6 @@ public sealed class NoteViewModel : INotifyPropertyChanged, IDisposable
 {
     private readonly NoteService _service;
     private Note _note;
-    private bool _preview;
     public event PropertyChangedEventHandler? PropertyChanged;
     public Note Snapshot => _note;
     public string Title { get => _note.Title; set => Change(_note with { Title = value }); }
@@ -30,9 +29,7 @@ public sealed class NoteViewModel : INotifyPropertyChanged, IDisposable
     public bool IsBold { get => _note.IsBold; set => Change(_note with { IsBold = value }); }
     public NoteTextAlignment TextAlignment { get => _note.TextAlignment; set => Change(_note with { TextAlignment = value }); }
     public NoteVerticalAlignment VerticalAlignment { get => _note.VerticalAlignment; set => Change(_note with { VerticalAlignment = value }); }
-    public bool IsPreview { get => _preview; set { _preview = value; OnChanged(); } }
     public ICommand ToggleCollapsed { get; }
-    public ICommand TogglePreview { get; }
     public ICommand Hide { get; }
     public ICommand Delete { get; }
 
@@ -42,7 +39,6 @@ public sealed class NoteViewModel : INotifyPropertyChanged, IDisposable
         _service = service;
         _service.NoteUpdated += OnNoteUpdated;
         ToggleCollapsed = new RelayCommand(() => Change(_note with { IsCollapsed = !_note.IsCollapsed }, nameof(IsCollapsed)));
-        TogglePreview = new RelayCommand(() => IsPreview = !IsPreview);
         Hide = new RelayCommand(hide);
         Delete = new RelayCommand(delete);
     }

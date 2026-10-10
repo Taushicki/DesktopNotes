@@ -1,0 +1,82 @@
+using System.Text.RegularExpressions;
+
+namespace DesktopNotes.Application;
+
+public static class MarkdownEditingCommands
+{
+    public static MarkdownTextEdit? PairCharacter(string text, int start, int length, char character)
+    {
+        var pairs = new Dictionary<char, char> { ['('] = ')', ['['] = ']', ['{'] = '}', ['"'] = '"', ['\''] = '\'' };
+        if (length == 0 && character is '\'' or '"' && start > 0 && char.IsLetterOrDigit(text[start - 1]) && text.LastIndexOf(character, start - 1) < 0) return null;
+        if (length == 0 && start < text.Length && character == text[start] && pairs.Values.Contains(character))
+            return new(start, 0, "", 1, 0);
+        if (!pairs.TryGetValue(character, out var close)) return null;
+        if (length == 0 && (character is '\'' or '"') && start > 0 && char.IsLetterOrDigit(text[start - 1])) return null;
+        if (length == 0 && start < text.Length && char.IsLetterOrDigit(text[start])) return null;
+        return new(start, length, character + text.Substring(start, length) + close, 1, length);
+    }
+
+    public static MarkdownTextEdit ToggleInline(string text, int start, int length, string marker)
+    {
+        if (marker == "**" && length > 0) return MarkdownFormatting.ToggleBold(text, start, length);
+        var selected = text.Substring(start, length);
+        if (selected.Length >= marker.Length * 2 && selected.StartsWith(marker, StringComparison.Ordinal) && selected.EndsWith(marker, StringComparison.Ordinal))
+            return new(start, length, selected[marker.Length..^marker.Length], 0, length - marker.Length * 2);
+        if (start >= marker.Length && start + length + marker.Length <= text.Length &&
+            text.AsSpan(start - marker.Length, marker.Length).SequenceEqual(marker) && text.AsSpan(start + length, marker.Length).SequenceEqual(marker))
+            return new(start - marker.Length, length + marker.Length * 2, selected, 0, length);
+        return new(start, length, marker + selected + marker, marker.Length, length);
+    }
+
+    public static MarkdownTextEdit ContinueLine(string text, int caret)
+    {
+        var start = caret == 0 ? 0 : text.LastIndexOf('\n', caret - 1) + 1;
+        var current = text[start..caret];
+        var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var match = Regex.Match(current, @"^([ \t]*)(?:(?<bullet>[-+*])|(?<number>\d+)(?<delimiter>[.)])|(?<quote>>)) (?<task>\[[ xX]\] )?");
+        if (!match.Success) return new(caret, 0, newline, newline.Length, 0);
+        var lineEnd = text.IndexOf('\n', caret); if (lineEnd < 0) lineEnd = text.Length;
+        if (string.IsNullOrWhiteSpace(text[(start + match.Length)..lineEnd])) return new(start, match.Length, "", 0, 0);
+        var prefix = match.Groups[1].Value;
+        if (match.Groups["number"].Success && int.TryParse(match.Groups["number"].Value, out var number) && number < int.MaxValue)
+            prefix += (number + 1) + match.Groups["delimiter"].Value + " ";
+        else prefix += (match.Groups["bullet"].Success ? match.Groups["bullet"].Value : ">") + " ";
+        if (match.Groups["task"].Success) prefix += "[ ] ";
+        return new(caret, 0, newline + prefix, newline.Length + prefix.Length, 0);
+    }
+
+    public static MarkdownTextEdit PrefixLines(string text, int start, int length, string prefix)
+    {
+        var first = start == 0 ? 0 : text.LastIndexOf('\n', start - 1) + 1;
+        var last = text.IndexOf('\n', Math.Min(text.Length, start + Math.Max(0, length - 1))); if (last < 0) last = text.Length;
+        var original = text[first..last]; var lines = original.Split('\n');
+        var remove = lines.All(line => line.StartsWith(prefix, StringComparison.Ordinal));
+        var changed = string.Join('\n', lines.Select(line => remove ? line[prefix.Length..] :
+            prefix.StartsWith('#') ? prefix + Regex.Replace(line, @"^#{1,6} ", "") : prefix + line));
+        return new(first, original.Length, changed, 0, changed.Length);
+    }
+
+    public static MarkdownTextEdit Indent(string text, int start, int length, bool unindent)
+    {
+        if (length == 0 && !unindent) return new(start, 0, "  ", 2, 0);
+        var first = start == 0 ? 0 : text.LastIndexOf('\n', start - 1) + 1;
+        var last = text.IndexOf('\n', Math.Min(text.Length, start + Math.Max(0, length - 1))); if (last < 0) last = text.Length;
+        var original = text[first..last];
+        var changed = string.Join('\n', original.Split('\n').Select(line => unindent ? Regex.Replace(line, @"^(\t| {1,2})", "") : "  " + line));
+        return new(first, original.Length, changed, 0, changed.Length);
+    }
+
+    public static MarkdownTextEdit ToggleTask(string text, int caret)
+    {
+        var first = caret == 0 ? 0 : text.LastIndexOf('\n', caret - 1) + 1;
+        var last = text.IndexOf('\n', caret); if (last < 0) last = text.Length;
+        var line = text[first..last]; var match = Regex.Match(line, @"^\s*[-+*] \[(?<check>[ xX])\]");
+        if (match.Success)
+        {
+            var index = first + match.Groups["check"].Index;
+            return new(index, 1, match.Groups["check"].Value == " " ? "x" : " ", 1, 0);
+        }
+        var changed = "- [ ] " + Regex.Replace(line, @"^\s*[-+*] ", "");
+        return new(first, line.Length, changed, Math.Min(changed.Length, caret - first + 6), 0);
+    }
+}

@@ -17,6 +17,8 @@ public static class Program
 
 public sealed class NotesApp(string[] arguments) : System.Windows.Application
 {
+    static NotesApp() => EventManager.RegisterClassHandler(typeof(FrameworkElement), ToolTipService.ToolTipOpeningEvent,
+        new ToolTipEventHandler((_, e) => e.Handled = true));
     private readonly Dictionary<Guid, NoteWindow> _windows = [];
     private readonly string _dataPath = Path.GetFullPath(Environment.GetEnvironmentVariable("DESKTOPNOTES_DATA_DIR")
         ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopNotes"));

@@ -172,7 +172,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     private void Refresh()
     {
         if (_disposed) return;
-        if (!_selected || _vm.IsPreview || _vm.IsCollapsed || !_host.IsVisible || !NativeWindows.IsShown(_host.Handle))
+        if (!_selected || _vm.IsCollapsed || !_host.IsVisible || !NativeWindows.IsShown(_host.Handle))
         {
             foreach (var popup in _popups.ToArray()) popup.IsOpen = false;
             Hide(); _timer.Stop(); return;
