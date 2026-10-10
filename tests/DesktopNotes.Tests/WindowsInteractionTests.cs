@@ -646,6 +646,37 @@ public sealed class WindowsInteractionTests
         finally { host.ClosePermanently(); }
     });
 
+    [Fact]
+    public Task ReturningFromAnotherWindowCannotRestoreEditorFocusInSelectionMode() => OnStaThread(() =>
+    {
+        var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
+        using var vm = new NoteViewModel(note, notes, () => { }, () => { });
+        var host = new NoteWindow(vm, new Layers());
+        var outside = new Button { Content = "Outside" };
+        var external = new Window { Content = outside, ShowInTaskbar = false };
+        try
+        {
+            host.Show(); external.Show(); host.UpdateLayout();
+            host.HandleContentClick(); host.HandleContentClick();
+            Assert.True(host.IsEditing); Assert.True(host.MarkdownEditor.TextArea.Focusable);
+            System.Windows.Input.Keyboard.Focus(outside);
+            host.SetConnectionState(false, false);
+            Assert.False(host.MarkdownEditor.Focusable); Assert.False(host.MarkdownEditor.TextArea.Focusable);
+            host.Activate(); host.HandleContentClick();
+            host.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+            Assert.False(host.IsEditing); Assert.False(host.MarkdownEditor.IsKeyboardFocusWithin);
+            System.Windows.Input.Keyboard.Focus(host.MarkdownEditor.TextArea);
+            Assert.False(host.MarkdownEditor.IsKeyboardFocusWithin);
+            host.HandleContentClick(); Assert.True(host.IsEditing); Assert.True(host.MarkdownEditor.IsKeyboardFocusWithin);
+            var panel = (Border)host.FormattingToolbar.Content;
+            Assert.Null(panel.Effect); Assert.True(panel.LayoutTransform.Value.IsIdentity);
+            Assert.True(host.FormattingToolbar.UseLayoutRounding);
+            var row = (StackPanel)panel.Child;
+            Assert.Equal(Colors.Firebrick, ((SolidColorBrush)((System.Windows.Shapes.Path)((Button)row.Children[6]).Content).Stroke).Color);
+        }
+        finally { host.ClosePermanently(); external.Close(); }
+    });
+
     private static Task OnStaThread(Action action)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

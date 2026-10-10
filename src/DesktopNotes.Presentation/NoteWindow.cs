@@ -107,6 +107,7 @@ public sealed class NoteWindow : Window
         root.Children.Add(header);
 
         _editor = new LiveMarkdownEditor() { Text = vm.Markdown, ContextMenu = ContextMenu, IsReadOnly = true };
+        EndEditing();
         _editor.EnableNoteTitle();
         if (_editor.Text != vm.Markdown) vm.Markdown = _editor.Text;
         _editor.TextChanged += (_, _) => { if (_editor.Text != _vm.Markdown) _vm.Markdown = _editor.Text; };
@@ -227,12 +228,22 @@ public sealed class NoteWindow : Window
         if (!_vm.IsCollapsed)
         {
             _editor.IsReadOnly = false;
+            _editor.Focusable = true;
+            _editor.TextArea.Focusable = true;
             System.Windows.Input.Keyboard.Focus(_editor.TextArea);
         }
         return false;
     }
 
-    private void EndEditing() => _editor.IsReadOnly = true;
+    private void EndEditing()
+    {
+        _editor.IsReadOnly = true;
+        // WPF can restore the previously focused TextArea when its window is
+        // reactivated. Read-only alone does not prevent its caret from blinking.
+        _editor.Focusable = false;
+        _editor.TextArea.Focusable = false;
+        _editor.TextArea.Caret.Hide();
+    }
     internal void DeleteSelectedNote() => _vm.Delete.Execute(null);
 
     internal Action<string>? OpenNoteLink { get; set; }
