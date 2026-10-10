@@ -61,7 +61,7 @@ public sealed class NotesApp(string[] arguments) : System.Windows.Application
             _board = new BoardInteractionController(_notes, _services.GetRequiredService<GroupSelectionSession>(),
                 _services.GetRequiredService<DesktopClickObserver>(), GetWindow, Dispatcher);
             _save.SaveFailed += OnSaveFailed;
-            _save.Saved += () => { _saveError = false; if (_tray is not null) _tray.Text = "DesktopNotes"; };
+            _save.Saved += () => _saveError = false;
             CreateTray();
             foreach (var note in _notes.Notes.Where(n => !n.IsHidden)) GetWindow(note.Id).Show();
             _instance.StartListening(command => Dispatcher.InvokeAsync(() =>
@@ -132,14 +132,13 @@ public sealed class NotesApp(string[] arguments) : System.Windows.Application
             menu.Items.Add(new Forms.ToolStripSeparator());
             menu.Items.Add("Выход", null, async (_, _) => await ExitAsync());
         };
-        _tray = new Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Information, Text = "DesktopNotes", ContextMenuStrip = menu, Visible = true };
+        _tray = new Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Information, ContextMenuStrip = menu, Visible = true };
         _tray.DoubleClick += (_, _) => CreateNote();
     }
 
     private void OnSaveFailed(Exception error)
     {
         if (_tray is null) return;
-        _tray.Text = "DesktopNotes — изменения не сохранены";
         if (!_saveError)
         {
             _tray.BalloonTipTitle = "Не удалось сохранить заметки";

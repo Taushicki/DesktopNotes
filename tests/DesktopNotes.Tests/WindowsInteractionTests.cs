@@ -21,6 +21,42 @@ public sealed class WindowsInteractionTests
     private sealed class Layers : IWindowLayerController { public void Apply(nint handle, WindowLayer layer) { } }
 
     [Fact]
+    public Task ToolbarBoldPreservesSelectionAndUndoWithoutChangingWholeNoteStyle() => OnStaThread(() =>
+    {
+        var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
+        using var vm = new NoteViewModel(note, notes, () => { }, () => { }); vm.Markdown = "before word after";
+        var host = new NoteWindow(vm, new Layers(), new MarkdownRenderer());
+        try
+        {
+            var editor = host.MarkdownEditor;
+            editor.GetBindingExpression(TextBox.TextProperty)!.UpdateTarget();
+            editor.ApplyTemplate(); editor.Measure(new Size(280, 200)); editor.Arrange(new Rect(0, 0, 280, 200));
+            Assert.Equal("before word after", editor.Text);
+            editor.Select(7, 4);
+            var row = Assert.IsType<StackPanel>(Assert.IsType<Border>(host.FormattingToolbar.Content).Child);
+            var button = Assert.IsType<Button>(row.Children[2]);
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal("before **word** after", notes.Get(note.Id).Markdown);
+            Assert.False(notes.Get(note.Id).IsBold); Assert.Equal("**word**", editor.SelectedText);
+            editor.Undo(); editor.GetBindingExpression(TextBox.TextProperty)!.UpdateSource();
+            Assert.Equal("before word after", notes.Get(note.Id).Markdown);
+            editor.Select(7, 4); button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal("before word after", notes.Get(note.Id).Markdown);
+            Assert.Equal("word", editor.SelectedText);
+            editor.Select(0, 0); button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.True(notes.Get(note.Id).IsBold);
+            void NoTooltips(DependencyObject element)
+            {
+                if (element is FrameworkElement control) Assert.Null(control.ToolTip);
+                for (var i = 0; i < VisualTreeHelper.GetChildrenCount(element); i++) NoTooltips(VisualTreeHelper.GetChild(element, i));
+            }
+            NoTooltips(host); NoTooltips(host.FormattingToolbar);
+        }
+        finally { host.ClosePermanently(); }
+    });
+
+    [Fact]
     public Task ToolbarFocusKeepsSelectionAndCommandsWorkUntilAnotherWindowIsSelected() => OnStaThread(() =>
     {
         var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);

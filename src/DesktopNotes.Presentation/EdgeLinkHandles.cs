@@ -73,7 +73,7 @@ internal sealed class EdgeLinkHandles : Grid, IDisposable
         var button = new Button
         {
             Content = visual, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0),
-            Focusable = false, Cursor = Cursors.Cross, ToolTip = "Потяните точку на другую заметку. Escape — отмена."
+            Focusable = false, Cursor = Cursors.Cross
         };
         AutomationProperties.SetName(button, $"Создать связь: {side switch { NoteSide.Left => "слева", NoteSide.Top => "сверху", NoteSide.Right => "справа", _ => "снизу" }}");
         var window = new Window

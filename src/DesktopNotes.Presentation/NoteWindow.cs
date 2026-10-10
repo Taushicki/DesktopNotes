@@ -40,6 +40,7 @@ public sealed class NoteWindow : Window
     internal Action<NoteWindow>? InteractionDeactivated { get; set; }
     internal bool IsConnectionSelected => _linkHandles.IsSelected;
     internal NoteFormattingToolbar FormattingToolbar => _formatting;
+    internal TextBox MarkdownEditor => _editor;
     internal bool OwnsInteractionWindow(nint handle) => handle != 0 &&
         (handle == Handle || NativeWindows.RootOwner(handle) == Handle || _formatting.OwnsWindow(handle));
     internal Action? CommitSelection { get; set; }
@@ -81,8 +82,7 @@ public sealed class NoteWindow : Window
         _titleArea = new Border
         {
             Background = Brushes.Transparent, Padding = new Thickness(8, 0, 4, 0), Focusable = true,
-            Cursor = System.Windows.Input.Cursors.SizeAll,
-            ToolTip = "Перетащите за заголовок. Двойной клик или F2 — изменить название."
+            Cursor = System.Windows.Input.Cursors.SizeAll
         };
         var titleContent = new Grid();
         _titleLabel = new TextBlock { FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis };
@@ -91,7 +91,7 @@ public sealed class NoteWindow : Window
         {
             Background = Brushes.Transparent, BorderThickness = new Thickness(0), FontWeight = FontWeights.SemiBold,
             VerticalContentAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed,
-            Cursor = System.Windows.Input.Cursors.IBeam, ToolTip = "Enter — сохранить название; Escape — отменить"
+            Cursor = System.Windows.Input.Cursors.IBeam
         };
         _titleEditor.SetBinding(TextBox.TextProperty, new Binding(nameof(vm.Title)) { UpdateSourceTrigger = UpdateSourceTrigger.Explicit });
         _titleEditor.ContextMenu = ContextMenu;
@@ -153,9 +153,9 @@ public sealed class NoteWindow : Window
             AcceptsReturn = true, AcceptsTab = true, TextWrapping = TextWrapping.Wrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(8), FontSize = 14,
-            IsUndoEnabled = true, ToolTip = "Текст в формате Markdown"
+            IsUndoEnabled = true, IsInactiveSelectionHighlightEnabled = true
         };
-        _editor.SetBinding(TextBox.TextProperty, new Binding(nameof(vm.Markdown)) { UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged });
+        _editor.SetBinding(TextBox.TextProperty, new Binding(nameof(vm.Markdown)) { Source = vm, UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged });
         _editor.ContextMenu = ContextMenu;
         _body.Children.Add(_editor);
         _viewer = new FlowDocumentScrollViewer { Background = Brushes.Transparent, BorderThickness = new Thickness(0), VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, IsToolBarVisible = false, Visibility = Visibility.Collapsed, ContextMenu = ContextMenu };
@@ -220,8 +220,27 @@ public sealed class NoteWindow : Window
         Closed += (_, _) => { _formatting.Dispose(); _linkHandles.Dispose(); vm.PropertyChanged -= OnViewModelChanged; vm.Dispose(); _source?.RemoveHook(WindowMessages); };
     }
 
-    private static Button MakeButton(string text, string tooltip) => new()
-    { Content = text, ToolTip = tooltip, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(8, 3, 8, 3), MinWidth = 28, Focusable = false };
+    private static Button MakeButton(string text, string accessibleName)
+    {
+        var button = new Button { Content = text, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(8, 3, 8, 3), MinWidth = 28, Focusable = false };
+        AutomationProperties.SetName(button, accessibleName);
+        return button;
+    }
+
+    internal void ToggleBoldFormatting()
+    {
+        if (_vm.IsPreview || _editor.SelectionLength == 0) { _vm.IsBold = !_vm.IsBold; return; }
+        var edit = MarkdownFormatting.ToggleBold(_editor.Text, _editor.SelectionStart, _editor.SelectionLength);
+        _editor.BeginChange();
+        try
+        {
+            _editor.Select(edit.Start, edit.Length);
+            _editor.SelectedText = edit.Replacement;
+            _editor.Select(edit.Start + edit.SelectionStart, edit.SelectionLength);
+        }
+        finally { _editor.EndChange(); }
+        _editor.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+    }
 
     private System.Windows.Shapes.Path CreateModeIcon(bool isPreview) => new()
     {
@@ -286,7 +305,6 @@ public sealed class NoteWindow : Window
                 _editor.Visibility = _vm.IsPreview ? Visibility.Collapsed : Visibility.Visible;
                 _viewer.Visibility = _vm.IsPreview ? Visibility.Visible : Visibility.Collapsed;
                 var previewAction = _vm.IsPreview ? "Редактировать Markdown" : "Показать оформленный Markdown";
-                _preview.ToolTip = previewAction;
                 AutomationProperties.SetName(_preview, previewAction);
                 if (_vm.IsPreview) RenderPreview(); else _editor.Focus();
                 break;

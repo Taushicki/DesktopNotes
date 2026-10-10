@@ -36,13 +36,13 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         _color = Button("Цвет заметки", () => OpenPalette());
         row.Children.Add(_color);
         _size = new ComboBox { Width = 66, Height = 30, IsEditable = true, FontSize = 15, VerticalContentAlignment = VerticalAlignment.Center,
-            ItemsSource = new double[] { 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72 }, ToolTip = "Размер шрифта (8–72)" };
+            ItemsSource = new double[] { 8, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 60, 72 } };
         AutomationProperties.SetName(_size, "Размер шрифта");
         _size.SelectionChanged += (_, _) => { if (!_updating && _size.SelectedItem is double value) _vm.FontSize = value; };
         _size.LostKeyboardFocus += (_, _) => CommitSize();
         _size.KeyDown += (_, e) => { if (e.Key == System.Windows.Input.Key.Enter) { CommitSize(); e.Handled = true; } };
         row.Children.Add(_size);
-        _bold = Button("Жирный шрифт", () => _vm.IsBold = !_vm.IsBold);
+        _bold = Button("Жирный шрифт", _host.ToggleBoldFormatting);
         _bold.Content = new TextBlock { Text = "B", FontWeight = FontWeights.Bold, FontStyle = FontStyles.Italic, FontSize = 19 };
         row.Children.Add(_bold);
         _alignment = Button("Выравнивание текста", OpenAlignment);
@@ -64,7 +64,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     private static Button Button(string tooltip, Action action)
     {
         var button = new Button { Width = 43, Height = 32, Margin = new Thickness(1, 0, 1, 0), Background = Brushes.Transparent,
-            BorderThickness = new Thickness(0), Foreground = Brushes.DarkSlateGray, Focusable = false, ToolTip = tooltip, Padding = new Thickness(4) };
+            BorderThickness = new Thickness(0), Foreground = Brushes.DarkSlateGray, Focusable = false, Padding = new Thickness(4) };
         AutomationProperties.SetName(button, tooltip);
         button.Click += (_, _) => action();
         return button;
@@ -90,7 +90,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         _pin.Content = CreateIcon(_vm.IsPinned ? "M 5,10 L 5,6 C 5,0 15,0 15,6 L 15,10 M 3,10 L 17,10 L 17,22 L 3,22 Z M 10,14 L 10,18"
             : "M 5,10 L 5,6 C 5,0 15,0 15,6 M 3,10 L 17,10 L 17,22 L 3,22 Z M 10,14 L 10,18");
         _pin.Background = _vm.IsPinned ? Brushes.LightBlue : Brushes.Transparent;
-        _pin.ToolTip = _vm.IsPinned ? "Открепить положение заметки" : "Закрепить положение заметки";
+        AutomationProperties.SetName(_pin, _vm.IsPinned ? "Открепить положение заметки" : "Закрепить положение заметки");
         _updating = false;
     }
 
