@@ -118,8 +118,11 @@ public sealed class NoteWindow : Window
         };
         _editor.ContentGeometryChanged += UpdateEditorHeight;
         _body.Children.Add(_editor);
-        // Keep editable text clear of the collapse control without a blank caption row.
-        _body.Margin = new Thickness(0, 0, 28, 0);
+        // Extend the scroll viewer to the note edge, keeping the text's existing
+        // inset and the collapse button's space inside the text area only.
+        _body.Margin = new Thickness(0, 0, -7.5, 0);
+        _editor.Padding = new Thickness(6, 6, 0, 6);
+        _editor.TextArea.Margin = new Thickness(0, 0, 41.5, 0);
         Grid.SetRow(_body, 1); root.Children.Add(_body);
         var shell = new Grid();
         shell.Children.Add(root);

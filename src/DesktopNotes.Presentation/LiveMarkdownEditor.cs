@@ -85,7 +85,8 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
                 {
                     // Override the system width assigned locally by the viewer template.
                     bar.Style = (System.Windows.Style)Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)];
-                    bar.Width = 6; bar.MinWidth = 0; bar.Margin = new Thickness(1, 0, 1, 0);
+                    bar.Width = 6; bar.MinWidth = 0; bar.Margin = new Thickness(0);
+                    System.Windows.Shell.WindowChrome.SetIsHitTestVisibleInChrome(bar, true);
                 }
                 else StyleScrollbars(child);
             }
