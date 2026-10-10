@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using DesktopNotes.Application;
 using DesktopNotes.Domain;
@@ -31,7 +32,7 @@ internal sealed class BoardInteractionController : IDisposable
     private NoteWindow? _linkTarget;
     private ArrowOverlay? _linkPreview;
     private readonly DispatcherTimer _visibilityTimer;
-    private readonly DispatcherTimer _linkDragTimer;
+    private bool _renderingLink;
 
     public BoardInteractionController(NoteService notes, GroupSelectionSession selection, DesktopClickObserver clicks,
         Func<Guid, NoteWindow> getWindow, Dispatcher dispatcher)
@@ -46,11 +47,7 @@ internal sealed class BoardInteractionController : IDisposable
         _visibilityTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(200), DispatcherPriority.Background,
             (_, _) => { if (_arrows.Count > 0) RefreshArrows(); }, dispatcher);
         _visibilityTimer.Start();
-        // Capture crosses several native windows; sample the screen cursor even
-        // when the port does not receive a WPF MouseMove event.
-        _linkDragTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(16), DispatcherPriority.Render,
-            (_, _) => UpdateLinkPreview(), dispatcher);
-        _linkDragTimer.Stop();
+
     }
 
     public void Attach(NoteWindow window)
@@ -65,7 +62,7 @@ internal sealed class BoardInteractionController : IDisposable
         window.CommitSelection = _selection.Commit;
         window.PopulateBoardMenu = PopulateMenu;
         window.LinkDragStarted = BeginLink;
-        window.LinkDragUpdated = UpdateLinkPreview;
+        window.LinkDragUpdated = () => { }; // Cursor is sampled once per composition frame.
         window.LinkDragCompleted = CompleteLink;
         window.CancelInteraction = CancelInteraction;
         window.OpenNoteLink = destination =>
@@ -243,7 +240,8 @@ internal sealed class BoardInteractionController : IDisposable
         _linkPreview = new ArrowOverlay();
         Mouse.OverrideCursor = Cursors.Cross;
         UpdateLinkPreview();
-        _linkDragTimer.Start();
+        CompositionTarget.Rendering += OnLinkRendering;
+        _renderingLink = true;
     }
 
     private NoteWindow? DropTarget()
@@ -264,6 +262,7 @@ internal sealed class BoardInteractionController : IDisposable
     {
         if (_linkSource is null || _linkPreview is null) return;
         if (!_linkSource.IsVisible || !NativeWindows.IsShown(_linkSource.Handle)) { CancelLink(); return; }
+        var previousTarget = _linkTarget;
         _linkTarget = DropTarget();
         var source = NativeWindows.Rect(_linkSource.Handle).Bounds;
         IReadOnlyList<DiagramPoint> points;
@@ -275,7 +274,16 @@ internal sealed class BoardInteractionController : IDisposable
             points = ArrowRouter.FromSide(source, end, ArrowRouter.NearestSide(source, end), 32 * NativeWindows.Scale(_linkSource.Handle));
         }
         _linkPreview.Draw(points, new LinkStyle(), _linkSource.Handle, _linkTarget?.Handle ?? _linkSource.Handle);
-        RefreshFrames();
+        if (previousTarget != _linkTarget) RefreshFrames();
+    }
+
+    private void OnLinkRendering(object? sender, EventArgs e) => UpdateLinkPreview();
+
+    private void StopLinkRendering()
+    {
+        if (!_renderingLink) return;
+        CompositionTarget.Rendering -= OnLinkRendering;
+        _renderingLink = false;
     }
 
     private void CompleteLink()
@@ -288,7 +296,7 @@ internal sealed class BoardInteractionController : IDisposable
 
     private void CancelLink()
     {
-        _linkDragTimer.Stop();
+        StopLinkRendering();
         _linkPreview?.Close();
         _linkPreview = null;
         _linkSource = null;
@@ -378,7 +386,7 @@ internal sealed class BoardInteractionController : IDisposable
         if (_disposed) return;
         _disposed = true;
         _visibilityTimer.Stop();
-        _linkDragTimer.Stop();
+        StopLinkRendering();
         _linkSelection.Changed -= RefreshArrowSelection;
         _notes.Changed -= ScheduleRefresh;
         _selection.StateChanged -= OnSelectionChanged;

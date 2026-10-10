@@ -236,7 +236,7 @@ public sealed class WindowsInteractionTests
     public Task DragPreviewMovesItsArrowheadAndDoesNotCreateEndpointWindows() => OnStaThread(() =>
     {
         var host = new Window { Left = -10000, Top = -10000, Width = 320, Height = 280, ShowActivated = false, ShowInTaskbar = false };
-        var preview = new ArrowOverlay();
+        var preview = new ArrowOverlay(previewBounds: new ScreenRect { Left = -10000, Top = -10000, Right = -9200, Bottom = -9400 });
         try
         {
             host.Show();
@@ -252,9 +252,11 @@ public sealed class WindowsInteractionTests
             Assert.False(preview.IsHitTestVisible);
             Assert.False(visual.Interactive);
             Assert.Equal(first, visual.Points[^1]);
+            var initialBounds = NativeWindows.Rect(new System.Windows.Interop.WindowInteropHelper(preview).Handle);
             preview.Draw([start, new(-9500, start.Y), new(-9500, moved.Y), moved], new LinkStyle(), owner, owner);
             preview.UpdateLayout();
             Assert.Equal(moved, visual.Points[^1]);
+            Assert.Equal(initialBounds, NativeWindows.Rect(new System.Windows.Interop.WindowInteropHelper(preview).Handle));
             Assert.Empty(host.OwnedWindows.Cast<Window>());
             var tip = new Point((moved.X - visual.PhysicalOrigin.Left) / visual.Scale - 3,
                 (moved.Y - visual.PhysicalOrigin.Top) / visual.Scale);

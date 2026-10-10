@@ -15,13 +15,15 @@ internal sealed class ArrowOverlay : Window
     private readonly bool _interactive;
     private Window? _startAdornment, _endAdornment;
     private nint _startOwner, _endOwner;
+    private readonly ScreenRect? _previewBounds;
     public event Action? SelectRequested;
     public event Action? DeleteRequested;
     public event Action? DeselectRequested;
 
-    public ArrowOverlay(bool interactive = false)
+    public ArrowOverlay(bool interactive = false, ScreenRect? previewBounds = null)
     {
         _interactive = interactive;
+        _previewBounds = previewBounds;
         ShowInTaskbar = false;
         ShowActivated = false;
         WindowStyle = WindowStyle.None;
@@ -82,10 +84,24 @@ internal sealed class ArrowOverlay : Window
             Right = (int)Math.Ceiling(points.Max(p => p.X)) + padding,
             Bottom = (int)Math.Ceiling(points.Max(p => p.Y)) + padding
         };
+        if (!_interactive)
+        {
+            // Keep the layered HWND stationary while drawing the moving arrow.
+            // Resizing its backing surface every mouse sample causes visible stutter.
+            var desktop = System.Windows.Forms.SystemInformation.VirtualScreen;
+            rect = _previewBounds ?? new ScreenRect
+            {
+                Left = desktop.Left - 128, Top = desktop.Top - 128,
+                Right = desktop.Right + 128, Bottom = desktop.Bottom + 128
+            };
+        }
+        if (IsVisible && _source == source && _target == target && _visual.LinkStyle == style && _visual.Points.SequenceEqual(points)) return;
         _source = source; _target = target;
         _interop.EnsureHandle();
         if (!IsVisible) Show();
-        NativeWindows.SetBounds(_interop.Handle, rect);
+        var current = NativeWindows.Rect(_interop.Handle);
+        if (current.Left != rect.Left || current.Top != rect.Top || current.Right != rect.Right || current.Bottom != rect.Bottom)
+            NativeWindows.SetBounds(_interop.Handle, rect);
         _visual.Points = points;
         _visual.LinkStyle = style;
         _visual.PhysicalOrigin = NativeWindows.Rect(_interop.Handle);
