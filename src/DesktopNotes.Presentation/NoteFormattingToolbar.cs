@@ -31,6 +31,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     internal NoteFormattingToolbar(NoteWindow host, NoteViewModel vm)
     {
         _host = host; _vm = vm;
+        Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/DesktopNotes;component/ToolbarStyles.xaml", UriKind.Relative) });
         ShowInTaskbar = false; ShowActivated = false;
         WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize;
         AllowsTransparency = true; Background = Brushes.Transparent;
@@ -64,7 +65,11 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         }
         size.Children.Add(arrows); row.Children.Add(size);
         _bold = Button("Жирный шрифт", _host.ToggleBoldFormatting);
-        _bold.Content = new TextBlock { Text = "B", FontWeight = FontWeights.Bold, FontStyle = FontStyles.Italic, FontSize = 16 };
+        _bold.Content = new System.Windows.Shapes.Path
+        {
+            Data = Geometry.Parse("F0 M 3,0 L 8,0 C 14,0 14,7 9,7 C 15,7 14,14 7,14 L 0,14 Z M 5,2 L 4,6 L 7,6 C 11,6 11,2 8,2 Z M 4,8 L 3,12 L 7,12 C 11,12 12,8 8,8 Z"),
+            Fill = Brushes.DarkSlateGray, Width = 12, Height = 16, Stretch = Stretch.Fill
+        };
         row.Children.Add(_bold);
         _alignment = Button("Выравнивание текста", OpenAlignment);
         row.Children.Add(_alignment);
@@ -90,10 +95,11 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         Sync();
     }
 
-    private static Button Button(string tooltip, Action action)
+    private Button Button(string tooltip, Action action)
     {
         var button = new Button { Width = 25, Height = 26, Margin = new Thickness(0.5, 0, 0.5, 0), Background = Brushes.Transparent,
             BorderThickness = new Thickness(0), Foreground = Brushes.DarkSlateGray, Focusable = false, Padding = new Thickness(2), SnapsToDevicePixels = true, UseLayoutRounding = true, FontSize = 13 };
+        button.Style = (Style)Resources["ToolbarButton"];
         AutomationProperties.SetName(button, tooltip);
         button.Click += (_, _) => action();
         return button;
@@ -119,7 +125,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     {
         if (property is null or nameof(NoteViewModel.FontSize)) _size.Text = _vm.FontSize.ToString(CultureInfo.CurrentCulture);
         if (property is null or nameof(NoteViewModel.Color)) _color.Content = new System.Windows.Shapes.Ellipse { Width = 19, Height = 19, Fill = (Brush)new BrushConverter().ConvertFromString(Palette[(int)_vm.Color])!, Stroke = Brushes.SlateGray, StrokeThickness = 0.8 };
-        if (property is null or nameof(NoteViewModel.IsBold)) _bold.Background = _vm.IsBold ? Brushes.LightBlue : Brushes.Transparent;
+        if (property is null or nameof(NoteViewModel.IsBold)) _bold.Background = _vm.IsBold ? (Brush)Resources["ToolbarSelectedBrush"] : Brushes.Transparent;
         if (property is null or nameof(NoteViewModel.TextAlignment)) _alignment.Content = AlignmentIcon(_vm.TextAlignment);
         if (property is null or nameof(NoteViewModel.IsPinned)) _pin.Content = CreateIcon(_vm.IsPinned ? "M 5,10 L 5,6 C 5,0 15,0 15,6 L 15,10 M 3,10 L 17,10 L 17,22 L 3,22 Z M 10,14 L 10,18"
             : "M 5,10 L 5,6 C 5,0 15,0 15,6 M 3,10 L 17,10 L 17,22 L 3,22 Z M 10,14 L 10,18");
@@ -129,7 +135,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
             WindowLayer.Background => "M 2,3 L 10,8 L 18,3 M 2,7 L 10,12 L 18,7 M 2,11 L 10,16 L 18,11 M 10,16 L 10,21 M 7,18 L 10,21 L 13,18",
             _ => "M 2,5 L 10,0 L 18,5 L 10,10 Z M 2,9 L 10,14 L 18,9 M 2,13 L 10,18 L 18,13"
         });
-        if (property is null or nameof(NoteViewModel.IsPinned)) _pin.Background = _vm.IsPinned ? Brushes.LightBlue : Brushes.Transparent;
+        if (property is null or nameof(NoteViewModel.IsPinned)) _pin.Background = _vm.IsPinned ? (Brush)Resources["ToolbarSelectedBrush"] : Brushes.Transparent;
         if (property is null or nameof(NoteViewModel.IsPinned)) AutomationProperties.SetName(_pin, _vm.IsPinned ? "Открепить положение заметки" : "Закрепить положение заметки");
     }
 
@@ -174,7 +180,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         foreach (var value in Enum.GetValues<NoteTextAlignment>())
         {
             var button = Button(names[(int)value], () => { _vm.TextAlignment = value; popup!.IsOpen = false; });
-            button.Content = AlignmentIcon(value); button.Background = _vm.TextAlignment == value ? Brushes.LightBlue : Brushes.Transparent;
+            button.Content = AlignmentIcon(value); button.Background = _vm.TextAlignment == value ? (Brush)Resources["ToolbarSelectedBrush"] : Brushes.Transparent;
             horizontal.Children.Add(button);
         }
         string[] verticalNames = ["Сверху", "По середине", "Снизу"];
@@ -184,7 +190,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
             button.Content = CreateIcon(value switch { NoteVerticalAlignment.Top => "M 0,0 L 20,0 M 10,20 L 10,5 M 5,10 L 10,5 L 15,10",
                 NoteVerticalAlignment.Bottom => "M 0,20 L 20,20 M 10,0 L 10,15 M 5,10 L 10,15 L 15,10",
                 _ => "M 0,10 L 20,10 M 10,0 L 10,7 M 6,3 L 10,7 L 14,3 M 10,20 L 10,13 M 6,17 L 10,13 L 14,17" });
-            button.Background = _vm.VerticalAlignment == value ? Brushes.LightBlue : Brushes.Transparent; vertical.Children.Add(button);
+            button.Background = _vm.VerticalAlignment == value ? (Brush)Resources["ToolbarSelectedBrush"] : Brushes.Transparent; vertical.Children.Add(button);
         }
         rows.Children.Add(horizontal); rows.Children.Add(new Separator()); rows.Children.Add(vertical);
         popup = Popup(_alignment, rows);
@@ -198,7 +204,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         {
             var button = Button(names[(int)layer], () => { _vm.Layer = layer; popup!.IsOpen = false; });
             button.Width = 126; button.Content = names[(int)layer];
-            button.Background = _vm.Layer == layer ? Brushes.LightBlue : Brushes.Transparent;
+            button.Background = _vm.Layer == layer ? (Brush)Resources["ToolbarSelectedBrush"] : Brushes.Transparent;
             items.Children.Add(button);
         }
         popup = Popup(_layer, items);
