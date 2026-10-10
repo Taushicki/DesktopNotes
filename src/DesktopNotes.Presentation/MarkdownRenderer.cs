@@ -97,7 +97,7 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
                 case Markdig.Extensions.TaskLists.TaskList task:
                     var checkbox = new System.Windows.Controls.CheckBox { IsChecked = task.Checked, Focusable = false, VerticalAlignment = VerticalAlignment.Center,
                         IsHitTestVisible = actions?.ToggleTask is not null };
-                    System.Windows.Automation.AutomationProperties.SetName(checkbox, "Задача выполнена");
+                    System.Windows.Automation.AutomationProperties.SetName(checkbox, UiText.Get("Задача выполнена"));
                     checkbox.Click += (_, _) => actions?.ToggleTask?.Invoke(task.Span.Start, checkbox.IsChecked == true);
                     target.Add(new InlineUIContainer(checkbox)); break;
                 case CodeInline code: target.Add(new Run(code.Content) { FontFamily = new FontFamily("Consolas"), Background = new SolidColorBrush(Color.FromArgb(22, 0, 0, 0)) }); break;
@@ -111,7 +111,7 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
                     AddInlines(span.Inlines, emphasis, actions);
                     target.Add(span);
                     break;
-                case LinkInline link when link.IsImage: target.Add(new Run("[изображение]")); break;
+                case LinkInline link when link.IsImage: target.Add(new Run(UiText.Get("[изображение]"))); break;
                 case LinkInline link:
                     if (Uri.TryCreate(link.Url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
                     {
@@ -121,7 +121,7 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
                         {
                             try { Process.Start(new ProcessStartInfo(args.Uri.AbsoluteUri) { UseShellExecute = true }); }
                             catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-                            { System.Windows.MessageBox.Show("Не удалось открыть ссылку: " + ex.Message, "DesktopNotes"); }
+                            { System.Windows.MessageBox.Show(UiText.Get("Не удалось открыть ссылку: ") + ex.Message, "DesktopNotes"); }
                             args.Handled = true;
                         };
                         target.Add(hyperlink);

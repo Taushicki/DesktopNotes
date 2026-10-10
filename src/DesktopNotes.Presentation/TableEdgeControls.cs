@@ -86,7 +86,7 @@ internal sealed class TableEdgeControls : Canvas, IDisposable
             AddButton.Background = _editor.Theme.Hover;
             _icon.Stroke = _editor.Theme.Foreground;
             Resources["ToolbarHoverBrush"] = _editor.Theme.Pressed;
-            AutomationProperties.SetName(AddButton, _expansion == TableExpansion.Row ? "Добавить строку" : "Добавить столбец");
+            AutomationProperties.SetName(AddButton, _expansion == TableExpansion.Row ? UiText.Get("Добавить строку") : UiText.Get("Добавить столбец"));
             AddButton.Visibility = Visibility.Visible;
             return;
         }

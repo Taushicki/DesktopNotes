@@ -5,9 +5,11 @@ using DesktopNotes.Application;
 namespace DesktopNotes.Infrastructure;
 
 /// <summary>Immediate, serialized local writes; logging failures never break the application.</summary>
-public sealed class FileAppLogger : IAppLogger
+public sealed class FileAppLogger : IConfigurableAppLogger
 {
     private readonly object _gate = new();
+    private bool _enabled = true;
+    private AppLogLevel _minimumLevel = AppLogLevel.Information;
     private readonly long _maxBytes;
     private readonly int _retainedFiles;
     private readonly string _directory;
@@ -22,10 +24,17 @@ public sealed class FileAppLogger : IAppLogger
         FilePath = Path.Combine(_directory, $"DesktopNotes-{DateTimeOffset.UtcNow:yyyyMMdd-HHmmssfff}-{Environment.ProcessId}-{Guid.NewGuid():N}.log");
     }
 
+    public void Configure(bool enabled, AppLogLevel minimumLevel)
+    {
+        if (!Enum.IsDefined(minimumLevel)) throw new ArgumentOutOfRangeException(nameof(minimumLevel));
+        lock (_gate) { _enabled = enabled; _minimumLevel = minimumLevel; }
+    }
+
     public void Write(AppLogLevel level, string eventName, string message, Exception? exception = null)
     {
         lock (_gate)
         {
+            if (!_enabled || level < _minimumLevel) return;
             try
             {
                 Directory.CreateDirectory(_directory);

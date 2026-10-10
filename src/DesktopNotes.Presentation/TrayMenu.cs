@@ -33,7 +33,7 @@ internal sealed class TrayMenu
 
     private MenuItem Add(string label, Action action)
     {
-        var item = new MenuItem { Header = label };
+        var item = new MenuItem { Header = UiText.Get(label), Tag = label };
         item.Click += (_, _) => { Close(); action(); };
         Menu.Items.Add(item);
         return item;
@@ -42,6 +42,7 @@ internal sealed class TrayMenu
     internal void Open(bool dark, bool saveError)
     {
         Close();
+        foreach (var item in Menu.Items.OfType<MenuItem>()) item.Header = UiText.Get((string)item.Tag);
         _retry.Visibility = saveError ? Visibility.Visible : Visibility.Collapsed;
         NoteMenuAppearance.Apply(Menu, NoteThemes.Get(dark ? NoteColor.GitHubDark : NoteColor.Yellow));
         Menu.IsOpen = true;

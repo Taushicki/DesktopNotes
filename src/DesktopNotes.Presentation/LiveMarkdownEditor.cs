@@ -70,8 +70,21 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.Caret.PositionChanged += OnFenceCaretChanged;
         TextArea.SelectionChanged += OnFenceCaretChanged;
         TextArea.TextEntering += OnFenceTextEntering;
-        _search = SearchPanel.Install(this); _search.Localization = new RussianSearch(); _search.MarkerBrush = Theme.Highlight;
-        System.Windows.Automation.AutomationProperties.SetName(this, "Текст заметки — Markdown Live Preview");
+        _search = SearchPanel.Install(this); _search.Localization = new LocalizedSearch(); _search.MarkerBrush = Theme.Highlight;
+        System.Windows.Automation.AutomationProperties.SetName(this, UiText.Get("Текст заметки — Markdown Live Preview"));
+        System.ComponentModel.PropertyChangedEventManager.AddHandler(UiText.Current, OnLanguageChanged, string.Empty);
+    }
+
+    private void OnLanguageChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(() => OnLanguageChanged(sender, e));
+            return;
+        }
+        if (_disposed) return;
+        _search.Localization = new LocalizedSearch();
+        System.Windows.Automation.AutomationProperties.SetName(this, UiText.Get("Текст заметки — Markdown Live Preview"));
     }
 
     private void OnTextChanged(object? sender, EventArgs args)
@@ -369,7 +382,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             if (marker is not null) { ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, marker)); return true; }
             if (key == Key.K)
             {
-                var label = SelectionLength == 0 ? "ссылка" : SelectedText;
+                var label = SelectionLength == 0 ? UiText.Get("ссылка") : SelectedText;
                 var replacement = $"[{label}](https://)";
                 ApplyEdit(new(SelectionStart, SelectionLength, replacement, label.Length + 3, 8)); return true;
             }
@@ -463,7 +476,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 
     internal void InsertTable()
     {
-        const string table = "| Заголовок 1 | Заголовок 2 |\n| --- | --- |\n|  |  |\n";
+        var table = UiText.Get("| Заголовок 1 | Заголовок 2 |\n| --- | --- |\n|  |  |\n");
         var prefix = SelectionStart > 0 && Text[SelectionStart - 1] != '\n' ? "\n\n" : "";
         ApplyEdit(new(SelectionStart, SelectionLength, prefix + table, prefix.Length + 2, 11));
     }
@@ -514,7 +527,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 
     internal void AppendFormattingMenu(ContextMenu menu)
     {
-        var formatting = new MenuItem { Header = "Оформление текста" };
+        var formatting = new MenuItem { Header = UiText.Get("Оформление текста") };
         void Add(string label, Action action)
         {
             var parts = label.Split(" — ", 2, StringSplitOptions.None);
@@ -522,14 +535,14 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             item.Click += (_, _) => { action(); TextArea.Focus(); };
             formatting.Items.Add(item);
         }
-        Add("Жирный — Ctrl+B", ToggleBoldSelection);
-        Add("Курсив — Ctrl+I", () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "*")));
-        Add("Код — Ctrl+`", () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "`")));
-        Add("Блок кода", InsertCodeBlock);
-        Add("Зачёркнутый", () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "~~")));
-        Add("Выделить маркером", () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "==")));
-        var headings = new MenuItem { Header = "Заголовок" };
-        var normal = new MenuItem { Header = "Обычный текст" };
+        Add(UiText.Get("Жирный — Ctrl+B"), ToggleBoldSelection);
+        Add(UiText.Get("Курсив — Ctrl+I"), () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "*")));
+        Add(UiText.Get("Код — Ctrl+`"), () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "`")));
+        Add(UiText.Get("Блок кода"), InsertCodeBlock);
+        Add(UiText.Get("Зачёркнутый"), () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "~~")));
+        Add(UiText.Get("Выделить маркером"), () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "==")));
+        var headings = new MenuItem { Header = UiText.Get("Заголовок") };
+        var normal = new MenuItem { Header = UiText.Get("Обычный текст") };
         normal.Click += (_, _) => { SetHeading(0); TextArea.Focus(); }; headings.Items.Add(normal);
         for (var level = 1; level <= 6; level++)
         {
@@ -538,8 +551,8 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             item.Click += (_, _) => { SetHeading(selectedLevel); TextArea.Focus(); }; headings.Items.Add(item);
         }
         formatting.Items.Add(headings);
-        Add("Задача — Ctrl+L", () => ApplyEdit(MarkdownEditingCommands.ToggleTasks(Text, SelectionStart, SelectionLength)));
-        Add("Таблица — Ctrl+Shift+T", InsertTable);
+        Add(UiText.Get("Задача — Ctrl+L"), () => ApplyEdit(MarkdownEditingCommands.ToggleTasks(Text, SelectionStart, SelectionLength)));
+        Add(UiText.Get("Таблица — Ctrl+Shift+T"), InsertTable);
         menu.Items.Add(formatting);
     }
 
@@ -679,6 +692,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     {
         if (_disposed) return; _disposed = true;
         SmoothScroll.Dispose(); TableControls.Dispose();
+        System.ComponentModel.PropertyChangedEventManager.RemoveHandler(UiText.Current, OnLanguageChanged, string.Empty);
         Loaded -= OnEditorLoaded;
         TextChanged -= OnTextChanged; PreviewKeyDown -= OnKey;
         TextArea.PreviewMouseLeftButtonDown -= OnEditorMouseDown;
@@ -688,14 +702,14 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         PreviewTextInput -= OnTextInput; _search.Uninstall();
     }
 
-    private sealed class RussianSearch : ICSharpCode.AvalonEdit.Search.Localization
+    private sealed class LocalizedSearch : ICSharpCode.AvalonEdit.Search.Localization
     {
-        public override string MatchCaseText => "Учитывать регистр";
-        public override string MatchWholeWordsText => "Слова целиком";
-        public override string UseRegexText => "Регулярное выражение";
-        public override string FindNextText => "Следующее совпадение (F3)";
-        public override string FindPreviousText => "Предыдущее совпадение (Shift+F3)";
-        public override string ErrorText => "Ошибка: ";
-        public override string NoMatchesFoundText => "Совпадений нет";
+        public override string MatchCaseText => UiText.Get("Учитывать регистр");
+        public override string MatchWholeWordsText => UiText.Get("Слова целиком");
+        public override string UseRegexText => UiText.Get("Регулярное выражение");
+        public override string FindNextText => UiText.Get("Следующее совпадение (F3)");
+        public override string FindPreviousText => UiText.Get("Предыдущее совпадение (Shift+F3)");
+        public override string ErrorText => UiText.Get("Ошибка: ");
+        public override string NoMatchesFoundText => UiText.Get("Совпадений нет");
     }
 }

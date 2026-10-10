@@ -22,14 +22,14 @@ public sealed class WindowLayerController : IWindowLayerController
     }
 }
 
-public sealed class DesktopMenuRegistration(string executable) : IDesktopMenuRegistration
+public sealed class DesktopMenuRegistration(string executable, Func<string>? caption = null) : IDesktopMenuRegistration
 {
     private const string Key = @"Software\Classes\DesktopBackground\shell\DesktopNotes";
     public bool IsRegistered { get { using var key = Registry.CurrentUser.OpenSubKey(Key); return key is not null; } }
     public void Register()
     {
         using var key = Registry.CurrentUser.CreateSubKey(Key);
-        key.SetValue("", "Создать заметку");
+        key.SetValue("", caption?.Invoke() ?? "Создать заметку");
         key.SetValue("Icon", $"\"{executable}\",0");
         using var command = key.CreateSubKey("command");
         command.SetValue("", $"\"{executable}\" --new-note");

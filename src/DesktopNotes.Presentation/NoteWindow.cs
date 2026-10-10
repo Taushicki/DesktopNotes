@@ -101,7 +101,7 @@ public sealed class NoteWindow : Window
             finally { EndDrag?.Invoke(this); }
         };
         header.Children.Add(_titleArea);
-        var collapse = MakeButton("Свернуть / развернуть");
+        var collapse = MakeButton(UiText.Get("Свернуть / развернуть"));
         _collapseIcon = new System.Windows.Shapes.Path
         {
             Width = 12, Height = 6, Stroke = Brushes.DarkSlateGray, StrokeThickness = 1.8,
@@ -131,7 +131,7 @@ public sealed class NoteWindow : Window
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(uri.AbsoluteUri) { UseShellExecute = true }); }
             catch (Exception error) when (error is Win32Exception or InvalidOperationException)
-            { System.Windows.MessageBox.Show(this, "Не удалось открыть ссылку: " + error.Message, "DesktopNotes"); }
+            { System.Windows.MessageBox.Show(this, UiText.Get("Не удалось открыть ссылку: ") + error.Message, "DesktopNotes"); }
         };
         _editor.ContentGeometryChanged += UpdateEditorHeight;
         _body.Children.Add(_editor);
@@ -288,7 +288,7 @@ public sealed class NoteWindow : Window
         _editor?.AppendFormattingMenu(menu);
         PopulateBoardMenu?.Invoke(this, menu);
         menu.Items.Add(new Separator());
-        menu.Items.Add(new MenuItem { Header = "Скрыть", Command = _vm.Hide });
+        menu.Items.Add(new MenuItem { Header = UiText.Get("Скрыть"), Command = _vm.Hide });
         NoteMenuAppearance.Apply(menu, NoteThemes.Get(_vm.Color));
     }
 
@@ -347,7 +347,7 @@ public sealed class NoteWindow : Window
     {
         Topmost = _vm.Layer == WindowLayer.Topmost;
         try { _layers.Apply(new WindowInteropHelper(this).Handle, _vm.Layer); }
-        catch (Win32Exception ex) { System.Windows.MessageBox.Show(this, "Не удалось изменить порядок окон: " + ex.Message, "DesktopNotes"); }
+        catch (Win32Exception ex) { System.Windows.MessageBox.Show(this, UiText.Get("Не удалось изменить порядок окон: ") + ex.Message, "DesktopNotes"); }
     }
 
     private void ApplyTextFormatting()

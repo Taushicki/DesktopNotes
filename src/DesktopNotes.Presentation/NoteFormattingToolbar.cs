@@ -38,11 +38,11 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         UseLayoutRounding = true; SnapsToDevicePixels = true;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
         var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        _color = Button("Цвет и тема заметки", () => OpenPalette());
+        _color = Button(UiText.Get("Цвет и тема заметки"), () => OpenPalette());
         row.Children.Add(_color);
         _size = new TextBox { Width = 30, Height = 25, FontSize = 13, BorderThickness = new Thickness(0),
             Background = Brushes.Transparent, VerticalContentAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center, Padding = new Thickness(0) };
-        AutomationProperties.SetName(_size, "Размер шрифта");
+        AutomationProperties.SetName(_size, UiText.Get("Размер шрифта"));
         _size.LostKeyboardFocus += (_, _) => CommitSize();
         _size.KeyDown += (_, e) =>
         {
@@ -55,7 +55,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         var arrows = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         foreach (var delta in new[] { 1, -1 })
         {
-            var step = Button(delta > 0 ? "Увеличить размер шрифта" : "Уменьшить размер шрифта", () => ChangeSize(delta));
+            var step = Button(delta > 0 ? UiText.Get("Увеличить размер шрифта") : UiText.Get("Уменьшить размер шрифта"), () => ChangeSize(delta));
             step.Width = 12; step.Height = 12; step.Margin = new Thickness(0); step.Padding = new Thickness(1);
             step.Content = CreateIcon(delta > 0 ? "M 0,4 L 4,0 L 8,4" : "M 0,0 L 4,4 L 8,0");
             ((System.Windows.Shapes.Path)step.Content).StrokeThickness = 1.8;
@@ -63,20 +63,20 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
             arrows.Children.Add(step);
         }
         size.Children.Add(arrows); row.Children.Add(size);
-        _bold = Button("Жирный шрифт", _host.ToggleBoldFormatting);
+        _bold = Button(UiText.Get("Жирный шрифт"), _host.ToggleBoldFormatting);
         _bold.Content = new System.Windows.Shapes.Path
         {
             Data = Geometry.Parse("F0 M 3,0 L 8,0 C 14,0 14,7 9,7 C 15,7 14,14 7,14 L 0,14 Z M 5,2 L 4,6 L 7,6 C 11,6 11,2 8,2 Z M 4,8 L 3,12 L 7,12 C 11,12 12,8 8,8 Z"),
             Fill = Brushes.DarkSlateGray, Width = 12, Height = 16, Stretch = Stretch.Fill
         };
         row.Children.Add(_bold);
-        _alignment = Button("Выравнивание текста", OpenAlignment);
+        _alignment = Button(UiText.Get("Выравнивание текста"), OpenAlignment);
         row.Children.Add(_alignment);
-        _pin = Button("Закрепить положение заметки", () => _vm.IsPinned = !_vm.IsPinned);
+        _pin = Button(UiText.Get("Закрепить положение заметки"), () => _vm.IsPinned = !_vm.IsPinned);
         row.Children.Add(_pin);
-        _layer = Button("Расположение окон", OpenLayers);
+        _layer = Button(UiText.Get("Расположение окон"), OpenLayers);
         row.Children.Add(_layer);
-        var delete = Button("Удалить заметку", _host.DeleteSelectedNote);
+        var delete = Button(UiText.Get("Удалить заметку"), _host.DeleteSelectedNote);
         delete.Content = CreateIcon("M 2,4 L 18,4 M 7,4 L 7,1 L 13,1 L 13,4 M 4,4 L 5,20 L 15,20 L 16,4 M 8,8 L 8,16 M 12,8 L 12,16");
         ((System.Windows.Shapes.Path)delete.Content).Stroke = Brushes.Firebrick;
         row.Children.Add(delete);
@@ -135,7 +135,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
             _ => "M 2,5 L 10,0 L 18,5 L 10,10 Z M 2,9 L 10,14 L 18,9 M 2,13 L 10,18 L 18,13"
         });
         if (property is null or nameof(NoteViewModel.IsPinned)) _pin.Background = _vm.IsPinned ? (Brush)Resources["ToolbarSelectedBrush"] : Brushes.Transparent;
-        if (property is null or nameof(NoteViewModel.IsPinned)) AutomationProperties.SetName(_pin, _vm.IsPinned ? "Открепить положение заметки" : "Закрепить положение заметки");
+        if (property is null or nameof(NoteViewModel.IsPinned)) AutomationProperties.SetName(_pin, _vm.IsPinned ? UiText.Get("Открепить положение заметки") : UiText.Get("Закрепить положение заметки"));
     }
 
     private static System.Windows.Shapes.Path AlignmentIcon(NoteTextAlignment alignment) => CreateIcon(alignment switch
@@ -185,14 +185,14 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     {
         var rows = new StackPanel(); var horizontal = new StackPanel { Orientation = Orientation.Horizontal };
         var vertical = new StackPanel { Orientation = Orientation.Horizontal }; Popup? popup = null;
-        string[] names = ["По левому краю", "По центру", "По правому краю", "По ширине"];
+        string[] names = [UiText.Get("По левому краю"), UiText.Get("По центру"), UiText.Get("По правому краю"), UiText.Get("По ширине")];
         foreach (var value in Enum.GetValues<NoteTextAlignment>())
         {
             var button = Button(names[(int)value], () => { _vm.TextAlignment = value; popup!.IsOpen = false; });
             button.Content = AlignmentIcon(value); button.Background = _vm.TextAlignment == value ? (Brush)Resources["ToolbarSelectedBrush"] : Brushes.Transparent;
             horizontal.Children.Add(button);
         }
-        string[] verticalNames = ["Сверху", "По середине", "Снизу"];
+        string[] verticalNames = [UiText.Get("Сверху"), UiText.Get("По середине"), UiText.Get("Снизу")];
         foreach (var value in Enum.GetValues<NoteVerticalAlignment>())
         {
             var button = Button(verticalNames[(int)value], () => { _vm.VerticalAlignment = value; popup!.IsOpen = false; });
@@ -208,7 +208,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     private void OpenLayers()
     {
         var items = new StackPanel(); Popup? popup = null;
-        string[] names = ["Обычный", "Поверх окон", "На задний план"];
+        string[] names = [UiText.Get("Обычный"), UiText.Get("Поверх окон"), UiText.Get("На задний план")];
         foreach (var layer in Enum.GetValues<WindowLayer>())
         {
             var button = Button(names[(int)layer], () => { _vm.Layer = layer; popup!.IsOpen = false; });

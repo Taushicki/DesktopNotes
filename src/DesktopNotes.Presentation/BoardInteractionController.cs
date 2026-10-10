@@ -72,7 +72,7 @@ internal sealed class BoardInteractionController : IDisposable
             var note = Guid.TryParse(destination, out var id) ? _notes.Notes.FirstOrDefault(note => note.Id == id) :
                 _notes.Notes.FirstOrDefault(note => string.Equals(note.Title, destination, StringComparison.OrdinalIgnoreCase));
             if (note is not null) _getWindow(note.Id).Reveal();
-            else MessageBox.Show(window, "Заметка не найдена: " + destination, "DesktopNotes");
+            else MessageBox.Show(window, UiText.Get("Заметка не найдена: ") + destination, "DesktopNotes");
         };
         window.GeometryChanged += ScheduleRefresh;
         ScheduleRefresh();
@@ -91,7 +91,7 @@ internal sealed class BoardInteractionController : IDisposable
     {
         SelectConnectionNote(null);
         var warning = _selection.Toggle(window.NoteId);
-        if (warning is not null) MessageBox.Show(window, warning, "DesktopNotes — группы");
+        if (warning is not null) MessageBox.Show(window, UiText.Get(warning), UiText.Get("DesktopNotes — группы"));
     }
 
     private void SelectConnectionNote(NoteWindow? window)
@@ -126,7 +126,7 @@ internal sealed class BoardInteractionController : IDisposable
             try { _clicks.Start(); }
             catch (Win32Exception error)
             {
-                MessageBox.Show("Не удалось отслеживать завершение выбора вне стикеров. Кликните по стикеру без Ctrl для завершения.\n" + error.Message, "DesktopNotes");
+                MessageBox.Show(UiText.Get("Не удалось отслеживать завершение выбора вне стикеров. Кликните по стикеру без Ctrl для завершения.\n") + error.Message, "DesktopNotes");
             }
         }
         else _clicks.Stop();
@@ -195,7 +195,7 @@ internal sealed class BoardInteractionController : IDisposable
         var group = _notes.GroupOf(window.NoteId);
         if (group is not null)
         {
-            var color = new MenuItem { Header = "Цвет рамки группы…" };
+            var color = new MenuItem { Header = UiText.Get("Цвет рамки группы…") };
             color.Click += (_, _) =>
             {
                 using var picker = new Forms.ColorDialog { FullOpen = true, Color = System.Drawing.ColorTranslator.FromHtml(group.BorderColor) };
@@ -203,10 +203,10 @@ internal sealed class BoardInteractionController : IDisposable
                     _notes.SetGroupColor(group.Id, $"#{picker.Color.R:X2}{picker.Color.G:X2}{picker.Color.B:X2}");
             };
             menu.Items.Add(color);
-            var dissolve = new MenuItem { Header = "Распустить группу" };
+            var dissolve = new MenuItem { Header = UiText.Get("Распустить группу") };
             dissolve.Click += (_, _) => _notes.SetGroupMembers(group.Id, []);
             menu.Items.Add(dissolve);
-            if (!CanMove(window.NoteId)) menu.Items.Add(new MenuItem { Header = "Группа не двигается: участник закреплён", IsEnabled = false });
+            if (!CanMove(window.NoteId)) menu.Items.Add(new MenuItem { Header = UiText.Get("Группа не двигается: участник закреплён"), IsEnabled = false });
         }
     }
 

@@ -1,0 +1,81 @@
+<Window x:Class="DesktopNotes.Presentation.SettingsWindow" x:ClassModifier="internal"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:DesktopNotes.Presentation"
+        xmlns:app="clr-namespace:DesktopNotes.Application;assembly=DesktopNotes.Application"
+        Title="{local:Tr Настройки}" Width="540" Height="720" WindowStartupLocation="CenterScreen"
+        WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True" Background="Transparent"
+        FontFamily="Segoe UI" FontSize="14" Foreground="{DynamicResource NoteMenuForeground}"
+        UseLayoutRounding="True" SnapsToDevicePixels="True">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="SettingsStyles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+    <Border x:Name="Surface" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource NoteMenuBorder}"
+            Background="{DynamicResource NoteMenuBackground}">
+        <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="64" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+            <Grid Margin="24,0,16,0" MouseLeftButtonDown="DragHeader">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="DesktopNotes" FontSize="19" FontWeight="SemiBold" />
+                    <TextBlock Text="{local:Tr Настройки}" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource NoteMenuMuted}" />
+                </StackPanel>
+                <Button Content="✕" HorizontalAlignment="Right" VerticalAlignment="Center" Width="30" Height="30"
+                        Style="{StaticResource ToolbarButton}" Background="Transparent" Foreground="{DynamicResource NoteMenuForeground}"
+                        Click="CloseClicked" AutomationProperties.Name="{local:Tr Закрыть}" />
+            </Grid>
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="24,0,24,20">
+                    <TextBlock Text="{local:Tr Интерфейс}" Style="{StaticResource SettingsSection}" />
+                    <Grid Margin="0,14,0,10">
+                        <TextBlock Text="{local:Tr 'Язык приложения'}" VerticalAlignment="Center" />
+                        <ComboBox x:Name="LanguageBox" Width="190" HorizontalAlignment="Right"
+                                  SelectedValuePath="Tag" SelectedValue="{Binding Language, Mode=TwoWay}">
+                            <ComboBoxItem Content="Русский" Tag="{x:Static app:AppLanguage.Russian}" />
+                            <ComboBoxItem Content="English" Tag="{x:Static app:AppLanguage.English}" />
+                        </ComboBox>
+                    </Grid>
+                    <TextBlock Text="{local:Tr 'Изменения применяются сразу и сохраняются автоматически.'}" Style="{StaticResource SettingsHint}" />
+                    <Border Style="{StaticResource SettingsDivider}" />
+                    <TextBlock Text="{local:Tr Логирование}" Style="{StaticResource SettingsSection}" />
+                    <Grid Margin="0,14,0,4">
+                        <TextBlock Text="{local:Tr 'Записывать журнал'}" VerticalAlignment="Center" />
+                        <ToggleButton x:Name="LoggingSwitch" Style="{StaticResource SettingsSwitch}" HorizontalAlignment="Right"
+                                      IsChecked="{Binding LoggingEnabled, Mode=TwoWay}" AutomationProperties.Name="{local:Tr 'Записывать журнал'}" />
+                    </Grid>
+                    <TextBlock Text="{local:Tr 'Помогает разобраться в ошибках приложения.'}" Style="{StaticResource SettingsHint}" />
+                    <Grid Margin="0,14,0,6">
+                        <TextBlock Text="{local:Tr 'Уровень логирования'}" VerticalAlignment="Center" />
+                        <ComboBox x:Name="LogLevelBox" Width="190" HorizontalAlignment="Right" IsEnabled="{Binding LoggingEnabled}"
+                                  SelectedValuePath="Tag" SelectedValue="{Binding MinimumLogLevel, Mode=TwoWay}">
+                            <ComboBoxItem Content="{local:Tr Информация}" Tag="{x:Static app:AppLogLevel.Information}" />
+                            <ComboBoxItem Content="{local:Tr Предупреждения}" Tag="{x:Static app:AppLogLevel.Warning}" />
+                            <ComboBoxItem Content="{local:Tr Ошибки}" Tag="{x:Static app:AppLogLevel.Error}" />
+                        </ComboBox>
+                    </Grid>
+                    <TextBlock Text="{local:Tr 'Записываются события выбранного уровня и более важные.'}" Style="{StaticResource SettingsHint}" />
+                    <Border Style="{StaticResource SettingsDivider}" />
+                    <TextBlock Text="{local:Tr 'Интеграция с Windows'}" Style="{StaticResource SettingsSection}" />
+                    <TextBlock Text="{Binding RegistrationStatus}" Margin="0,12,0,4" />
+                    <TextBlock Text="{local:Tr 'В Windows 11 пункт доступен через «Показать дополнительные параметры».'}" Style="{StaticResource SettingsHint}" />
+                    <WrapPanel Margin="0,12,0,0">
+                        <Button Content="{local:Tr 'Добавить пункт меню'}" Command="{Binding InstallMenu}" Style="{StaticResource SettingsButton}" />
+                        <Button Content="{local:Tr 'Удалить пункт меню'}" Command="{Binding RemoveMenu}" Style="{StaticResource SettingsButton}" />
+                    </WrapPanel>
+                    <Border Style="{StaticResource SettingsDivider}" />
+                    <TextBlock Text="{local:Tr Данные}" Style="{StaticResource SettingsSection}" />
+                    <TextBlock Text="{local:Tr 'Заметки хранятся локально. Автозапуск выключен.'}" Style="{StaticResource SettingsHint}" Margin="0,12,0,6" />
+                    <TextBlock Text="{Binding DataPath}" TextWrapping="Wrap" Foreground="{DynamicResource NoteMenuMuted}" FontSize="12" />
+                    <WrapPanel Margin="0,12,0,0">
+                        <Button Content="{local:Tr 'Открыть папку заметок'}" Command="{Binding OpenNotesFolder}" Style="{StaticResource SettingsButton}" />
+                        <Button Content="{local:Tr 'Открыть папку журналов'}" Command="{Binding OpenLogsFolder}" Style="{StaticResource SettingsButton}" />
+                    </WrapPanel>
+                    <TextBlock Text="{Binding Error}" TextWrapping="Wrap" Foreground="#E55353" Margin="0,8,0,0" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Border>
+</Window>
