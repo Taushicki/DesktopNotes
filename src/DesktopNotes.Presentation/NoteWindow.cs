@@ -69,6 +69,7 @@ public sealed class NoteWindow : Window
         Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(35, 44, 52));
         FontFamily = new FontFamily("Segoe UI");
         ContextMenu = new ContextMenu();
+        NoteMenuAppearance.Initialize(ContextMenu);
         PopulateMenu(ContextMenu);
         ContextMenu.Opened += (_, _) => PopulateMenu(ContextMenu);
         WindowChrome.SetWindowChrome(this, new WindowChrome { CaptionHeight = 0, ResizeBorderThickness = new Thickness(5), GlassFrameThickness = new Thickness(0), CornerRadius = new CornerRadius(0) });
@@ -288,6 +289,7 @@ public sealed class NoteWindow : Window
         PopulateBoardMenu?.Invoke(this, menu);
         menu.Items.Add(new Separator());
         menu.Items.Add(new MenuItem { Header = "Скрыть", Command = _vm.Hide });
+        NoteMenuAppearance.Apply(menu, NoteThemes.Get(_vm.Color));
     }
 
     private void OnViewModelChanged(object? sender, PropertyChangedEventArgs args)
@@ -326,6 +328,7 @@ public sealed class NoteWindow : Window
             Resources["ToolbarHoverBrush"] = theme.Hover;
             Resources["ToolbarPressedBrush"] = theme.Pressed;
             _editor.SetTheme(theme);
+            NoteMenuAppearance.Apply(ContextMenu, theme);
             _body.Visibility = _vm.IsCollapsed ? Visibility.Collapsed : Visibility.Visible;
             _titleLabel.Visibility = _vm.IsCollapsed ? Visibility.Visible : Visibility.Collapsed;
             _collapseIcon.Data = Geometry.Parse(_vm.IsCollapsed ? "M 0,0 L 6,6 L 12,0" : "M 0,6 L 6,0 L 12,6");

@@ -515,7 +515,13 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     internal void AppendFormattingMenu(ContextMenu menu)
     {
         var formatting = new MenuItem { Header = "Оформление текста" };
-        void Add(string label, Action action) { var item = new MenuItem { Header = label }; item.Click += (_, _) => { action(); TextArea.Focus(); }; formatting.Items.Add(item); }
+        void Add(string label, Action action)
+        {
+            var parts = label.Split(" — ", 2, StringSplitOptions.None);
+            var item = new MenuItem { Header = parts[0], InputGestureText = parts.Length == 2 ? parts[1] : "" };
+            item.Click += (_, _) => { action(); TextArea.Focus(); };
+            formatting.Items.Add(item);
+        }
         Add("Жирный — Ctrl+B", ToggleBoldSelection);
         Add("Курсив — Ctrl+I", () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "*")));
         Add("Код — Ctrl+`", () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "`")));
@@ -528,7 +534,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         for (var level = 1; level <= 6; level++)
         {
             var selectedLevel = level;
-            var item = new MenuItem { Header = $"H{level} — Ctrl+{level}" };
+            var item = new MenuItem { Header = $"H{level}", InputGestureText = $"Ctrl+{level}" };
             item.Click += (_, _) => { SetHeading(selectedLevel); TextArea.Focus(); }; headings.Items.Add(item);
         }
         formatting.Items.Add(headings);
