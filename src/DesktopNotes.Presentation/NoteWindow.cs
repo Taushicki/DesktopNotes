@@ -253,6 +253,7 @@ public sealed class NoteWindow : Window
         try
         {
             Background = (Brush)new BrushConverter().ConvertFromString(NoteFormattingToolbar.Palette[(int)_vm.Color])!;
+            _editor.SetScrollBarColor(((SolidColorBrush)Background).Color);
             _body.Visibility = _vm.IsCollapsed ? Visibility.Collapsed : Visibility.Visible;
             _titleLabel.Visibility = _vm.IsCollapsed ? Visibility.Visible : Visibility.Collapsed;
             _captionRow.Height = new GridLength(_vm.IsCollapsed ? 34 : 0);

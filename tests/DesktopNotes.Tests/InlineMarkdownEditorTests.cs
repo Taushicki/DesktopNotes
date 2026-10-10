@@ -160,6 +160,52 @@ public sealed class InlineMarkdownEditorTests
         finally { host.Close(); }
     });
 
+    [Theory]
+    [InlineData(ModifierKeys.None)]
+    [InlineData(ModifierKeys.Shift)]
+    public Task EnterScrollsNewCaretIntoViewBeforeTypingAndScrollbarIsSlim(ModifierKeys modifiers) => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = string.Join("\n", Enumerable.Range(1, 30).Select(n => $"Строка {n}")) };
+        var host = Host(editor); host.Height = 180;
+        try
+        {
+            host.Show(); host.UpdateLayout(); editor.Select(editor.Text.Length, 0); editor.ScrollToEnd(); host.UpdateLayout();
+            var oldOffset = editor.VerticalOffset;
+            Assert.True(editor.HandleShortcut(Key.Enter, modifiers)); host.UpdateLayout();
+            editor.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background); host.UpdateLayout();
+            Assert.True(editor.VerticalOffset > oldOffset);
+            var view = editor.TextArea.TextView;
+            var line = view.GetOrConstructVisualLine(editor.Document.GetLineByOffset(editor.CaretOffset));
+            Assert.True(line.VisualTop + line.Height - view.ScrollOffset.Y <= view.ActualHeight + 1);
+            Assert.Equal(ScrollBarVisibility.Auto, editor.VerticalScrollBarVisibility);
+            static IEnumerable<DependencyObject> Descendants(DependencyObject root)
+            {
+                for (var i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+                {
+                    var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i); yield return child;
+                    foreach (var nested in Descendants(child)) yield return nested;
+                }
+            }
+            var bar = Assert.Single(Descendants(editor).OfType<System.Windows.Controls.Primitives.ScrollBar>(), b => b.Orientation == Orientation.Vertical);
+            Assert.Equal(6, bar.Width); Assert.InRange(bar.ActualWidth, 5.5, 6.5); Assert.Equal(Visibility.Visible, bar.Visibility);
+            editor.SetScrollBarColor(System.Windows.Media.Colors.Lavender);
+            var thumbBrush = Assert.IsType<System.Windows.Media.SolidColorBrush>(editor.Resources["DesktopNotes.EditorScrollThumb"]);
+            Assert.Equal((byte)(System.Windows.Media.Colors.Lavender.R * .7), thumbBrush.Color.R);
+            var beforePageUp = editor.VerticalOffset;
+            System.Windows.Controls.Primitives.ScrollBar.PageUpCommand.Execute(null, bar); host.UpdateLayout();
+            Assert.True(editor.VerticalOffset < beforePageUp);
+            if (Environment.GetEnvironmentVariable("DESKTOPNOTES_TEST_RENDER_DIR") is { } directory)
+            {
+                host.Background = System.Windows.Media.Brushes.Lavender;
+                Directory.CreateDirectory(directory);
+                var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)host.ActualWidth, (int)host.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32); bitmap.Render(host);
+                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+                using var file = File.Create(Path.Combine(directory, "note-scrollbar.png")); encoder.Save(file);
+            }
+        }
+        finally { host.Close(); }
+    });
+
     private static Window Host(object content) => new() { Content = content, Left = -10000, Top = -10000, Width = 320, Height = 500, ShowActivated = false, ShowInTaskbar = false };
     private static string Geometry(TextEditor editor) => string.Join(";", editor.TextArea.TextView.VisualLines.Select(line =>
         $"{line.StartOffset}:{line.VisualTop:R}:{line.Height:R}:" + string.Join(",", line.TextLines.Select(text => $"{text.WidthIncludingTrailingWhitespace:R}/{text.Height:R}"))));

@@ -27,6 +27,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     private bool _noteTitle;
     private bool _normalizingTitle;
     private bool _redirectingFenceCaret;
+    private bool _caretScrollPending;
     internal sealed record PreviewBlock(int Start, int Length, bool IsCode = false, bool IsTable = false);
     internal IReadOnlyList<PreviewBlock> PreviewBlocks => _blocks;
     internal event Action<string>? OpenNoteRequested;
@@ -40,7 +41,9 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         Background = Brushes.Transparent; BorderThickness = new Thickness(0); Padding = new Thickness(6);
         FontFamily = new FontFamily("Segoe UI"); FontSize = 14;
         WordWrap = true; ShowLineNumbers = false;
-        VerticalScrollBarVisibility = ScrollBarVisibility.Hidden; HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto; HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+        Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/DesktopNotes;component/EditorScrollBar.xaml", UriKind.Relative) });
+        SetScrollBarColor(Color.FromRgb(255, 241, 168));
         Options.CutCopyWholeLine = true; Options.ConvertTabsToSpaces = true; Options.IndentationSize = 2;
         Options.InheritWordWrapIndentation = true;
         Options.ShowSpaces = false; Options.ShowTabs = false; Options.ShowEndOfLine = false; Options.ShowBoxForControlCharacters = false;
@@ -53,6 +56,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.TextView.LineTransformers.Add(new InlineStyling(this));
         TextArea.TextView.BackgroundRenderers.Add(new CodeBlockBackground(this));
         TextChanged += OnTextChanged;
+        Loaded += OnEditorLoaded;
         SizeChanged += (_, _) => TextArea.TextView.Redraw();
         TextArea.TextView.VisualLinesChanged += (_, _) => ContentGeometryChanged?.Invoke();
         PreviewKeyDown += OnKey;
@@ -70,7 +74,24 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         NormalizeTitle();
         RefreshPreview();
     }
-
+    private void OnEditorLoaded(object sender, RoutedEventArgs e)
+    {
+        void StyleScrollbars(DependencyObject root)
+        {
+            for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                if (child is System.Windows.Controls.Primitives.ScrollBar { Orientation: Orientation.Vertical } bar)
+                {
+                    // Override the system width assigned locally by the viewer template.
+                    bar.Style = (System.Windows.Style)Resources[typeof(System.Windows.Controls.Primitives.ScrollBar)];
+                    bar.Width = 6; bar.MinWidth = 0; bar.Margin = new Thickness(1, 0, 1, 0);
+                }
+                else StyleScrollbars(child);
+            }
+        }
+        StyleScrollbars(this);
+    }
     private void OnFenceTextEntering(object sender, TextCompositionEventArgs e)
     {
         if (SelectionLength != 0 || e.Text.Contains('\n')) return;
@@ -234,10 +255,27 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         _appearance = note; FontSize = note.FontSize; FontWeight = note.IsBold ? FontWeights.Bold : FontWeights.Normal;
         TextArea.TextView.Redraw();
     }
+    internal void SetScrollBarColor(Color color)
+    {
+        var brush = new SolidColorBrush(Color.FromRgb((byte)(color.R * .7), (byte)(color.G * .7), (byte)(color.B * .7)));
+        brush.Freeze();
+        Resources["DesktopNotes.EditorScrollThumb"] = brush;
+    }
     internal void ApplyEdit(MarkdownTextEdit edit)
     {
         using (Document.RunUpdate()) Document.Replace(edit.Start, edit.Length, edit.Replacement);
         Select(edit.Start + edit.SelectionStart, edit.SelectionLength);
+        TextArea.Caret.BringCaretToView();
+        if (!_caretScrollPending)
+        {
+            _caretScrollPending = true;
+            // Recheck after the new line has been measured, before the next input.
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, new Action(() =>
+            {
+                _caretScrollPending = false;
+                if (!_disposed) TextArea.Caret.BringCaretToView();
+            }));
+        }
     }
     internal void ToggleBoldSelection() => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "**"));
     internal void SetHeading(int level) => ApplyEdit(MarkdownEditingCommands.SetHeading(Text, SelectionStart, SelectionLength, level));
@@ -626,6 +664,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;
+        Loaded -= OnEditorLoaded;
         TextChanged -= OnTextChanged; PreviewKeyDown -= OnKey;
         TextArea.PreviewMouseLeftButtonDown -= OnEditorMouseDown;
         TextArea.Caret.PositionChanged -= OnFenceCaretChanged;
