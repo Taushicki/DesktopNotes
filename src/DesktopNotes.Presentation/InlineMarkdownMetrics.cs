@@ -24,7 +24,8 @@ internal static class InlineMarkdownMetrics
             if (first < 0) continue;
             var last = offsets.FindLastIndex(offset => offset >= range.Start && offset < range.Start + range.Length);
             var count = last - first + 1;
-            if (range.Style.HasFlag(InlineMarkdownLayout.Style.Bold)) text.SetFontWeight(FontWeights.Bold, first, count);
+            if (range.HeadingLevel > 0) text.SetFontWeight(range.HeadingLevel == 1 ? FontWeights.Bold : FontWeights.SemiBold, first, count);
+            else if (range.Style.HasFlag(InlineMarkdownLayout.Style.Bold)) text.SetFontWeight(FontWeights.Bold, first, count);
             if (range.Style.HasFlag(InlineMarkdownLayout.Style.Italic)) text.SetFontStyle(FontStyles.Italic, first, count);
             if (range.Style.HasFlag(InlineMarkdownLayout.Style.Code)) text.SetFontFamily("Consolas", first, count);
             if (range.Scale != 1) text.SetFontSize(editor.FontSize * range.Scale, first, count);

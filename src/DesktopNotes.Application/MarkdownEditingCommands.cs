@@ -4,6 +4,27 @@ namespace DesktopNotes.Application;
 
 public static class MarkdownEditingCommands
 {
+    public static MarkdownTextEdit SetHeading(string text, int start, int length, int level)
+    {
+        if (level is < 0 or > 6) throw new ArgumentOutOfRangeException(nameof(level));
+        var first = start == 0 ? 0 : text.LastIndexOf('\n', start - 1) + 1;
+        var last = text.IndexOf('\n', Math.Min(text.Length, start + Math.Max(0, length - 1))); if (last < 0) last = text.Length;
+        var original = text[first..last]; var lines = original.Split('\n');
+        var pattern = new Regex(@"^(?<indent> {0,3})(?<hashes>#{1,6})[ \t]+");
+        var nonempty = lines.Where(line => !string.IsNullOrWhiteSpace(line)).ToArray();
+        var remove = level == 0 || nonempty.Length > 0 && nonempty.All(line => pattern.Match(line) is { Success: true } match && match.Groups["hashes"].Length == level);
+        var changed = string.Join('\n', lines.Select(line =>
+        {
+            if (lines.Length > 1 && string.IsNullOrWhiteSpace(line)) return line;
+            var match = pattern.Match(line);
+            var indent = match.Success ? match.Groups["indent"].Value : "";
+            var content = match.Success ? line[match.Length..] : line;
+            if (match.Success) content = Regex.Replace(content, @"[ \t]+#+[ \t]*(?=\r?$)", "");
+            return indent + (remove ? "" : new string('#', level) + " ") + content;
+        }));
+        return new(first, original.Length, changed, 0, changed.Length);
+    }
+
     public static MarkdownTextEdit DeleteLines(string text, int start, int length)
     {
         var first = start == 0 ? 0 : text.LastIndexOf('\n', start - 1) + 1;

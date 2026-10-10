@@ -40,6 +40,10 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         VerticalScrollBarVisibility = ScrollBarVisibility.Hidden; HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         Options.CutCopyWholeLine = true; Options.ConvertTabsToSpaces = true; Options.IndentationSize = 2;
         Options.InheritWordWrapIndentation = true;
+        Options.ShowSpaces = false; Options.ShowTabs = false; Options.ShowEndOfLine = false; Options.ShowBoxForControlCharacters = false;
+        TextArea.SelectionBorder = null; TextArea.SelectionCornerRadius = 0;
+        TextArea.SelectionBrush = new SolidColorBrush(Color.FromArgb(100, 90, 160, 240));
+        TextArea.SelectionForeground = null;
         Options.EnableHyperlinks = false; Options.EnableEmailHyperlinks = false;
         TextArea.TextView.ElementGenerators.Add(new AlignmentGenerator(this));
         _generator = new InlineGenerator(this); TextArea.TextView.ElementGenerators.Add(_generator);
@@ -132,6 +136,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         Select(edit.Start + edit.SelectionStart, edit.SelectionLength);
     }
     internal void ToggleBoldSelection() => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "**"));
+    internal void SetHeading(int level) => ApplyEdit(MarkdownEditingCommands.SetHeading(Text, SelectionStart, SelectionLength, level));
 
     internal bool HandleEscape()
     {
@@ -194,7 +199,8 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         {
             var line = Document.GetLineByOffset(CaretOffset);
             var marker = Layout.Decorations.FirstOrDefault(part => part.Start == line.Offset && part.Length > 0 &&
-                part.Kind is InlineMarkdownLayout.DecorationKind.Bullet or InlineMarkdownLayout.DecorationKind.Number or InlineMarkdownLayout.DecorationKind.Task or InlineMarkdownLayout.DecorationKind.Quote);
+                (part.Kind is InlineMarkdownLayout.DecorationKind.Bullet or InlineMarkdownLayout.DecorationKind.Number or InlineMarkdownLayout.DecorationKind.Task or InlineMarkdownLayout.DecorationKind.Quote ||
+                part.Kind == InlineMarkdownLayout.DecorationKind.Hidden && Layout.Styles.Any(range => range.HeadingLevel > 0 && range.Start == line.Offset)));
             if (marker is not null)
             {
                 if (key == Key.Home && CaretOffset != marker.Start + marker.Length) { Select(marker.Start + marker.Length, 0); return true; }
@@ -216,7 +222,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             if (key is Key.OemOpenBrackets or Key.OemCloseBrackets)
             { ApplyEdit(MarkdownEditingCommands.IndentLines(Text, SelectionStart, SelectionLength, key == Key.OemOpenBrackets)); return true; }
             if (key >= Key.D1 && key <= Key.D6)
-            { ApplyEdit(MarkdownEditingCommands.PrefixLines(Text, SelectionStart, SelectionLength, new string('#', key - Key.D1 + 1) + " ")); return true; }
+            { SetHeading(key - Key.D1 + 1); return true; }
         }
         if (modifiers == (ModifierKeys.Control | ModifierKeys.Shift))
         {
@@ -320,6 +326,16 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         Add("Блок кода", InsertCodeBlock);
         Add("Зачёркнутый", () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "~~")));
         Add("Выделить маркером", () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "==")));
+        var headings = new MenuItem { Header = "Заголовок" };
+        var normal = new MenuItem { Header = "Обычный текст" };
+        normal.Click += (_, _) => { SetHeading(0); TextArea.Focus(); }; headings.Items.Add(normal);
+        for (var level = 1; level <= 6; level++)
+        {
+            var selectedLevel = level;
+            var item = new MenuItem { Header = $"H{level} — Ctrl+{level}" };
+            item.Click += (_, _) => { SetHeading(selectedLevel); TextArea.Focus(); }; headings.Items.Add(item);
+        }
+        formatting.Items.Add(headings);
         Add("Задача — Ctrl+L", () => ApplyEdit(MarkdownEditingCommands.ToggleTasks(Text, SelectionStart, SelectionLength)));
         Add("Таблица — Ctrl+Shift+T", InsertTable);
         menu.Items.Add(formatting);
@@ -435,6 +451,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
                     var style = range.Style; var face = element.TextRunProperties.Typeface;
                     element.TextRunProperties.SetTypeface(new Typeface(style.HasFlag(InlineMarkdownLayout.Style.Code) ? new FontFamily("Consolas") : face.FontFamily,
                         style.HasFlag(InlineMarkdownLayout.Style.Italic) ? FontStyles.Italic : face.Style,
+                        range.HeadingLevel > 0 ? range.HeadingLevel == 1 ? FontWeights.Bold : FontWeights.SemiBold :
                         style.HasFlag(InlineMarkdownLayout.Style.Bold) ? FontWeights.Bold : face.Weight, face.Stretch));
                     if (range.Scale != 1) element.TextRunProperties.SetFontRenderingEmSize(editor.FontSize * range.Scale);
                     if (style.HasFlag(InlineMarkdownLayout.Style.Strike)) element.TextRunProperties.SetTextDecorations(TextDecorations.Strikethrough);

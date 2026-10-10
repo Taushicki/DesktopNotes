@@ -15,7 +15,7 @@ internal sealed class InlineMarkdownLayout
         Cell? Cell = null, IReadOnlyList<Cell>? Column = null, IReadOnlyList<IReadOnlyList<Cell>>? Columns = null);
     [Flags]
     internal enum Style { None = 0, Bold = 1, Italic = 2, Code = 4, Strike = 8, Highlight = 16, Link = 32 }
-    internal sealed record StyledRange(int Start, int Length, Style Style, double Scale = 1);
+    internal sealed record StyledRange(int Start, int Length, Style Style, double Scale = 1, int HeadingLevel = 0);
     internal List<Decoration> Decorations { get; } = [];
     internal List<StyledRange> Styles { get; } = [];
     private readonly List<(int Start, int End)> _code = [];
@@ -49,6 +49,7 @@ internal sealed class InlineMarkdownLayout
                 continue;
             }
             if (block is Markdig.Extensions.Tables.Table table) DecorateTable(table, source);
+            if (block is HeadingBlock heading) DecorateHeading(heading, source);
             if (block is ListItemBlock item)
             {
                 var lineStart = source.LastIndexOf('\n', Math.Clamp(item.Span.Start - 1, 0, Math.Max(0, source.Length - 1))) + 1;
@@ -64,6 +65,8 @@ internal sealed class InlineMarkdownLayout
     private static readonly Regex ListPrefix = new(@"^(?<indent>[ \t]*)(?<marker>[-+*]|\d+[.)]) (?:(?<task>\[[ xX]\]) )?", RegexOptions.Compiled);
     private void DecorateLine(string text, int offset)
     {
+        if (Styles.Any(range => range.HeadingLevel > 0 && range.Start <= offset && range.Start + range.Length >= offset + text.Length) &&
+            Decorations.Any(part => part.Kind == DecorationKind.Hidden && part.Start == offset && part.Length >= text.Length)) return;
         var list = ListPrefix.Match(text);
         if (list.Success)
         {
@@ -73,11 +76,12 @@ internal sealed class InlineMarkdownLayout
                 list.Groups["indent"].Length * 8));
             return;
         }
-        var heading = Regex.Match(text, @"^ {0,3}(#{1,6}) ");
+        var heading = Regex.Match(text, @"^ {0,3}(#{1,6})[ \t]+");
         if (heading.Success)
         {
-            Decorations.Add(new(offset, heading.Length, DecorationKind.Hidden));
-            Styles.Add(new(offset, text.Length, Style.Bold, 1.9 - heading.Groups[1].Length * 0.12));
+            // Empty headings format immediately after the space, before text exists.
+            if (!Styles.Any(range => range.HeadingLevel > 0 && range.Start <= offset && range.Start + range.Length >= offset + text.Length))
+                AddHeading(offset, text.Length, heading.Length, heading.Groups[1].Length);
             return;
         }
         var quote = Regex.Match(text, @"^ {0,3}(?:> ?)+");
@@ -95,6 +99,47 @@ internal sealed class InlineMarkdownLayout
     private void Hide(int start, int length)
     {
         if (length > 0) Decorations.Add(new(start, length, DecorationKind.Hidden));
+    }
+
+    internal static double HeadingScale(int level) => level switch
+    { 1 => 1.802, 2 => 1.602, 3 => 1.424, 4 => 1.266, 5 => 1.125, _ => 1 };
+
+    private void AddHeading(int start, int length, int prefixLength, int level)
+    {
+        Hide(start, prefixLength);
+        Styles.Add(new(start, length, Style.Bold, HeadingScale(level), level));
+    }
+
+    private void DecorateHeading(HeadingBlock heading, string source)
+    {
+        var start = heading.Span.Start; var length = heading.Span.Length;
+        if (start < 0 || length <= 0 || start + length > source.Length) return;
+        if (!heading.IsSetext)
+        {
+            // Markdig's span may omit optional closing hashes; the entire physical
+            // heading line still needs the same typography and hidden delimiters.
+            var lineStart = start == 0 ? 0 : source.LastIndexOf('\n', start - 1) + 1;
+            if (string.IsNullOrWhiteSpace(source[lineStart..start])) start = lineStart;
+            var lineEnd = source.IndexOf('\n', start); if (lineEnd < 0) lineEnd = source.Length;
+            length = lineEnd - start;
+        }
+        var content = source.Substring(start, length).TrimEnd('\r', '\n');
+        if (heading.IsSetext)
+        {
+            Styles.Add(new(start, length, Style.Bold, HeadingScale(heading.Level), heading.Level));
+            var delimiter = content.LastIndexOf('\n');
+            if (delimiter >= 0)
+            {
+                var underline = content[(delimiter + 1)..].TrimEnd('\r', '\n');
+                Hide(start + delimiter + 1, underline.Length);
+            }
+            return;
+        }
+        var prefix = Regex.Match(content, @"^ {0,3}#{1,6}[ \t]+");
+        if (!prefix.Success) return;
+        AddHeading(start, length, prefix.Length, heading.Level);
+        var closing = Regex.Match(content, @"[ \t]+#+[ \t]*$");
+        if (closing.Success && closing.Index >= prefix.Length) Hide(start + closing.Index, closing.Length);
     }
 
     private void DecorateTable(Markdig.Extensions.Tables.Table table, string source)
