@@ -13,6 +13,37 @@ namespace DesktopNotes.Tests;
 public sealed class LiveEditorTests
 {
     [Theory]
+    [InlineData("first\nsecond\n")]
+    [InlineData("first\r\nsecond\r\n\r\nthird")]
+    [InlineData("- one\n- two\n\nnext")]
+    [InlineData("- one\r\n- two\r\n\r\nnext")]
+    [InlineData("> one\n> two\n\nnext")]
+    [InlineData("```\none\ntwo\n```\n\nnext")]
+    [InlineData("# Heading\n\nplain\ntext\n\nmore")]
+    public Task SavedMultilineMarkdownCanRenderAtStartup(string source) => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor(new MarkdownRenderer()) { Text = source };
+        var host = new Window { Content = editor, Left = -10000, Top = -10000, Width = 320, Height = 280, ShowActivated = false, ShowInTaskbar = false };
+        try
+        {
+            host.Show(); host.UpdateLayout();
+            Assert.Equal(source, editor.Text);
+            System.Windows.Input.Keyboard.Focus(editor.TextArea);
+            editor.CaretOffset = source.Length;
+            host.UpdateLayout();
+            editor.Document.Insert(editor.CaretOffset, "\nnew line\n");
+            host.UpdateLayout();
+            host.Focus(); System.Windows.Input.Keyboard.ClearFocus(); host.UpdateLayout();
+            editor.Undo(); host.UpdateLayout(); Assert.Equal(source, editor.Text);
+            editor.DisablePreview(); host.UpdateLayout();
+            Assert.Empty(editor.PreviewBlocks); Assert.Equal(source, editor.Text);
+            editor.Document.Insert(0, "source "); host.UpdateLayout();
+            Assert.StartsWith("source ", editor.Text);
+        }
+        finally { host.Close(); }
+    });
+
+    [Theory]
     [InlineData("- first", "- first\n- ")]
     [InlineData("3. third", "3. third\n4. ")]
     [InlineData("- [x] done", "- [x] done\n- [ ] ")]

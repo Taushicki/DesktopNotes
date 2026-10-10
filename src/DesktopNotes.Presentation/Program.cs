@@ -12,16 +12,46 @@ namespace DesktopNotes.Presentation;
 public static class Program
 {
     [STAThread]
-    public static void Main(string[] args) => new NotesApp(args).Run();
+    public static void Main(string[] args)
+    {
+        IAppLogger? logger = null;
+        UnhandledExceptionEventHandler? unhandled = null;
+        EventHandler<UnobservedTaskExceptionEventArgs>? unobserved = null;
+        try
+        {
+            var dataPath = Path.GetFullPath(Environment.GetEnvironmentVariable("DESKTOPNOTES_DATA_DIR")
+                ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopNotes"));
+            logger = new FileAppLogger(Path.Combine(dataPath, "logs"));
+            var version = System.Reflection.Assembly.GetExecutingAssembly().GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+                .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion;
+            logger.Write(AppLogLevel.Information, "Process.Start", $"version={version}; runtime={System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription}; OS={Environment.OSVersion}; executable={Environment.ProcessPath}");
+            unhandled = (_, e) => logger.Write(AppLogLevel.Error, "Process.UnhandledException", $"terminating={e.IsTerminating}", e.ExceptionObject as Exception);
+            unobserved = (_, e) => { logger.Write(AppLogLevel.Error, "Task.UnobservedException", "Background task failed", e.Exception); e.SetObserved(); };
+            AppDomain.CurrentDomain.UnhandledException += unhandled;
+            TaskScheduler.UnobservedTaskException += unobserved;
+            Environment.ExitCode = new NotesApp(args, dataPath, logger).Run();
+        }
+        catch (Exception error)
+        {
+            logger?.Write(AppLogLevel.Error, "Process.Fatal", "Application could not run", error);
+            System.Windows.MessageBox.Show("DesktopNotes завершилось с ошибкой.\n\n" + error.Message + "\n\nЖурнал: " + (logger as FileAppLogger)?.FilePath, "DesktopNotes", MessageBoxButton.OK, MessageBoxImage.Error);
+            Environment.ExitCode = 1;
+        }
+        finally
+        {
+            logger?.Write(AppLogLevel.Information, "Process.Exit", $"exitCode={Environment.ExitCode}");
+            if (unhandled is not null) AppDomain.CurrentDomain.UnhandledException -= unhandled;
+            if (unobserved is not null) TaskScheduler.UnobservedTaskException -= unobserved;
+        }
+    }
 }
 
-public sealed class NotesApp(string[] arguments) : System.Windows.Application
+public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger logger) : System.Windows.Application
 {
     static NotesApp() => EventManager.RegisterClassHandler(typeof(FrameworkElement), ToolTipService.ToolTipOpeningEvent,
         new ToolTipEventHandler((_, e) => e.Handled = true));
     private readonly Dictionary<Guid, NoteWindow> _windows = [];
-    private readonly string _dataPath = Path.GetFullPath(Environment.GetEnvironmentVariable("DESKTOPNOTES_DATA_DIR")
-        ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "DesktopNotes"));
+    private readonly string _dataPath = dataPath;
     private ServiceProvider? _services;
     private SingleInstance? _instance;
     private BoardInteractionController? _board;
@@ -31,10 +61,12 @@ public sealed class NotesApp(string[] arguments) : System.Windows.Application
     private Window? _settings;
     private bool _exiting;
     private bool _saveError;
+    private bool _handlingFatalError;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        DispatcherUnhandledException += OnDispatcherException;
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
         try
         {
@@ -44,10 +76,12 @@ public sealed class NotesApp(string[] arguments) : System.Windows.Application
             _instance = new SingleInstance(isolatedName);
             if (!_instance.IsPrimary)
             {
+                logger.Write(AppLogLevel.Information, "Instance.Forward", arguments.Contains("--new-note") ? "new-note" : "show");
                 await _instance.SendAsync(arguments.Contains("--new-note") ? "--new-note" : "--show");
                 Shutdown(); return;
             }
             var collection = new ServiceCollection();
+            collection.AddSingleton<IAppLogger>(logger);
             collection.AddSingleton<INoteRepository>(new JsonNoteRepository(_dataPath));
             collection.AddSingleton<NoteService>();
             collection.AddSingleton<AutosaveCoordinator>();
@@ -59,11 +93,12 @@ public sealed class NotesApp(string[] arguments) : System.Windows.Application
             _services = collection.BuildServiceProvider();
             _notes = _services.GetRequiredService<NoteService>();
             var warning = await _notes.LoadAsync();
+            logger.Write(AppLogLevel.Information, "Storage.Loaded", $"notes={_notes.Notes.Count}; groups={_notes.Snapshot.Groups.Count}; links={_notes.Snapshot.Links.Count}");
             _save = _services.GetRequiredService<AutosaveCoordinator>();
             _board = new BoardInteractionController(_notes, _services.GetRequiredService<GroupSelectionSession>(),
                 _services.GetRequiredService<DesktopClickObserver>(), GetWindow, Dispatcher);
             _save.SaveFailed += OnSaveFailed;
-            _save.Saved += () => _saveError = false;
+            _save.Saved += () => { _saveError = false; logger.Write(AppLogLevel.Information, "Storage.Saved", $"notes={_notes.Notes.Count}"); };
             CreateTray();
             foreach (var note in _notes.Notes.Where(n => !n.IsHidden)) GetWindow(note.Id).Show();
             _instance.StartListening(command => Dispatcher.InvokeAsync(() =>
@@ -72,13 +107,15 @@ public sealed class NotesApp(string[] arguments) : System.Windows.Application
                 if (command == "--new-note") CreateNote(); else ShowNotes();
             }).Task);
             SystemEvents.DisplaySettingsChanged += OnDisplayChanged;
-            if (warning is not null) System.Windows.MessageBox.Show(warning, "DesktopNotes — восстановление");
+            if (warning is not null) { logger.Write(AppLogLevel.Warning, "Storage.Recovery", warning); System.Windows.MessageBox.Show(warning, "DesktopNotes — восстановление"); }
             if (arguments.Contains("--new-note")) CreateNote();
             else if (_notes.Notes.Count == 0) { CreateNote(); OpenSettings(); }
+            logger.Write(AppLogLevel.Information, "Startup.Ready", $"visibleWindows={_windows.Count}");
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or UnsupportedStorageVersionException or TimeoutException or System.ComponentModel.Win32Exception)
+        catch (Exception ex)
         {
-            System.Windows.MessageBox.Show("Не удалось запустить DesktopNotes.\n\n" + ex.Message, "DesktopNotes", MessageBoxButton.OK, MessageBoxImage.Error);
+            logger.Write(AppLogLevel.Error, "Startup.Failed", "Application initialization failed", ex);
+            System.Windows.MessageBox.Show("Не удалось запустить DesktopNotes.\n\n" + ex.Message + "\n\nЖурнал: " + Path.Combine(_dataPath, "logs"), "DesktopNotes", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
     }
@@ -91,6 +128,7 @@ public sealed class NotesApp(string[] arguments) : System.Windows.Application
             () => DeleteNote(id));
         var services = _services!;
         var window = new NoteWindow(vm, services.GetRequiredService<IWindowLayerController>(), services.GetRequiredService<IMarkdownRenderer>());
+        logger.Write(AppLogLevel.Information, "Window.Created", $"noteId={id}");
         _windows.Add(id, window);
         _board?.Attach(window);
         return window;
@@ -140,6 +178,7 @@ public sealed class NotesApp(string[] arguments) : System.Windows.Application
 
     private void OnSaveFailed(Exception error)
     {
+        logger.Write(AppLogLevel.Error, "Storage.SaveFailed", "Changes remain in memory", error);
         if (_tray is null) return;
         if (!_saveError)
         {
@@ -180,6 +219,14 @@ public sealed class NotesApp(string[] arguments) : System.Windows.Application
             { System.Windows.MessageBox.Show(ex.Message, "DesktopNotes"); }
         };
         content.Children.Add(folder);
+        var logFolder = new Button { Content = "Открыть папку журналов", Padding = new Thickness(12, 8, 12, 8), Margin = new Thickness(0, 8, 0, 0) };
+        logFolder.Click += (_, _) =>
+        {
+            try { var path = Path.Combine(_dataPath, "logs"); Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo("explorer.exe") { ArgumentList = { path } }); }
+            catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
+            { logger.Write(AppLogLevel.Error, "Logs.OpenFailed", "Could not open log directory", error); System.Windows.MessageBox.Show(error.Message, "DesktopNotes"); }
+        };
+        content.Children.Add(logFolder);
         _settings = new Window { Title = "DesktopNotes — настройки", Width = 460, SizeToContent = SizeToContent.Height, ResizeMode = ResizeMode.NoResize, WindowStartupLocation = WindowStartupLocation.CenterScreen, Content = content };
         _settings.Closed += (_, _) => _settings = null;
         _settings.Show();
@@ -194,6 +241,7 @@ public sealed class NotesApp(string[] arguments) : System.Windows.Application
     {
         if (_exiting) return;
         _exiting = true;
+        logger.Write(AppLogLevel.Information, "Shutdown.Requested", "Flushing pending changes");
         _board?.CommitSelection();
         foreach (var window in _windows.Values) window.SaveBounds();
         foreach (var window in _windows.Values) window.IsEnabled = false;
@@ -211,6 +259,8 @@ public sealed class NotesApp(string[] arguments) : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        logger.Write(AppLogLevel.Information, "Shutdown.Exit", $"exitCode={e.ApplicationExitCode}");
+        DispatcherUnhandledException -= OnDispatcherException;
         SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
         _board?.Dispose();
         _tray?.ContextMenuStrip?.Dispose();
@@ -218,5 +268,27 @@ public sealed class NotesApp(string[] arguments) : System.Windows.Application
         _instance?.Dispose();
         _services?.Dispose();
         base.OnExit(e);
+    }
+
+    private void OnDispatcherException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+    {
+        logger.Write(AppLogLevel.Error, "UI.UnhandledException", "UI operation failed", e.Exception);
+        if (_handlingFatalError) return;
+        if (e.Exception is InvalidOperationException && e.Exception.Message.Contains("VisualLineElementGenerator", StringComparison.Ordinal) && _windows.Count > 0)
+        {
+            try
+            {
+                foreach (var window in _windows.Values) window.MarkdownEditor.DisablePreview();
+                e.Handled = true;
+                logger.Write(AppLogLevel.Warning, "Editor.Recovery", "Live Preview disabled for this session; Markdown preserved");
+                Dispatcher.BeginInvoke(() => System.Windows.MessageBox.Show("Ошибка отображения Markdown. Заметки доступны в исходном виде; текст сохранён без преобразования.\n\nЖурнал: " + Path.Combine(_dataPath, "logs"), "DesktopNotes", MessageBoxButton.OK, MessageBoxImage.Warning));
+                return;
+            }
+            catch (Exception recoveryError) { logger.Write(AppLogLevel.Error, "Editor.RecoveryFailed", "Could not restore source editor", recoveryError); }
+        }
+        _handlingFatalError = true;
+        e.Handled = true;
+        System.Windows.MessageBox.Show("DesktopNotes завершится из-за ошибки.\n\n" + e.Exception.Message + "\n\nЖурнал: " + Path.Combine(_dataPath, "logs"), "DesktopNotes", MessageBoxButton.OK, MessageBoxImage.Error);
+        Shutdown(1);
     }
 }

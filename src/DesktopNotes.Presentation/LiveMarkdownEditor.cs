@@ -23,6 +23,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     private string _parsedText = "";
     private readonly List<CollapsedLineSection> _collapsed = [];
     private bool _disposed;
+    private bool _previewDisabled;
     internal sealed record PreviewBlock(int Start, int Length, bool IsCode = false, bool IsTable = false);
     internal IReadOnlyList<PreviewBlock> PreviewBlocks => _blocks;
     internal event Action<string>? OpenNoteRequested;
@@ -59,6 +60,8 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     }
     private void RefreshPreview()
     {
+        if (_disposed) return;
+        if (_previewDisabled) { ClearCollapsedLines(); _blocks.Clear(); TextArea.TextView.Redraw(); return; }
         // Caret/selection events can precede TextChanged during Undo or a replacement.
         // Never reuse source ranges from the previous document in that interval.
         if (_parsedText != Text)
@@ -66,16 +69,34 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             _parsedText = Text;
             var parsed = Markdig.Markdown.Parse(_parsedText, _pipeline);
             _blocks = parsed.Where(block => block.Span.Start >= 0 && block.Span.Length > 0 && block.Span.End < _parsedText.Length)
-                .Select(block => new PreviewBlock(block.Span.Start, block.Span.Length, block is Markdig.Syntax.CodeBlock, block is Markdig.Extensions.Tables.Table)).ToList();
+                .Select(block =>
+                {
+                    // Markdig may include the final line delimiter in a list's span.
+                    // AvalonEdit uses the exclusive end to find the last visual line:
+                    // consuming that delimiter would also consume the next, uncollapsed line.
+                    var end = block.Span.End + 1;
+                    while (end > block.Span.Start && _parsedText[end - 1] is '\r' or '\n') end--;
+                    return new PreviewBlock(block.Span.Start, end - block.Span.Start, block is Markdig.Syntax.CodeBlock, block is Markdig.Extensions.Tables.Table);
+                }).Where(block => block.Length > 0).ToList();
         }
-        foreach (var section in _collapsed) section.Uncollapse();
-        _collapsed.Clear();
+        ClearCollapsedLines();
         foreach (var block in _blocks.Where(block => !IsSourceVisible(block)))
         {
             var first = Document.GetLineByOffset(block.Start); var last = Document.GetLineByOffset(block.Start + block.Length - 1);
             if (first.LineNumber < last.LineNumber) _collapsed.Add(TextArea.TextView.CollapseLines(first.NextLine, last));
         }
         TextArea.TextView.Redraw();
+    }
+    internal void DisablePreview()
+    {
+        _previewDisabled = true;
+        RefreshPreview();
+    }
+
+    private void ClearCollapsedLines()
+    {
+        foreach (var section in _collapsed) section.Uncollapse();
+        _collapsed.Clear();
     }
     private void OnCaretChanged(object? sender, EventArgs args) => RefreshPreview();
     private void OnFocusChanged(object sender, KeyboardFocusChangedEventArgs args) => RefreshPreview();
