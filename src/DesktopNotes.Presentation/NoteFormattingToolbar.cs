@@ -15,7 +15,6 @@ namespace DesktopNotes.Presentation;
 // A separate owned window keeps the toolbar outside the note without changing its saved bounds.
 internal sealed class NoteFormattingToolbar : Window, IDisposable
 {
-    internal static readonly string[] Palette = ["#FFF1A8", "#FFD9BC", "#CFF0D6", "#D3E9FC", "#E3D9FA", "#FAD8E4"];
     private readonly NoteWindow _host;
     private readonly NoteViewModel _vm;
     private readonly DispatcherTimer _timer;
@@ -39,7 +38,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
         UseLayoutRounding = true; SnapsToDevicePixels = true;
         TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
         var row = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        _color = Button("Цвет заметки", () => OpenPalette());
+        _color = Button("Цвет и тема заметки", () => OpenPalette());
         row.Children.Add(_color);
         _size = new TextBox { Width = 30, Height = 25, FontSize = 13, BorderThickness = new Thickness(0),
             Background = Brushes.Transparent, VerticalContentAlignment = VerticalAlignment.Center, TextAlignment = TextAlignment.Center, Padding = new Thickness(0) };
@@ -124,7 +123,7 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
     private void Sync(string? property = null)
     {
         if (property is null or nameof(NoteViewModel.FontSize)) _size.Text = _vm.FontSize.ToString(CultureInfo.CurrentCulture);
-        if (property is null or nameof(NoteViewModel.Color)) _color.Content = new System.Windows.Shapes.Ellipse { Width = 19, Height = 19, Fill = (Brush)new BrushConverter().ConvertFromString(Palette[(int)_vm.Color])!, Stroke = Brushes.SlateGray, StrokeThickness = 0.8 };
+        if (property is null or nameof(NoteViewModel.Color)) _color.Content = new System.Windows.Shapes.Ellipse { Width = 19, Height = 19, Fill = NoteThemes.Get(_vm.Color).Background, Stroke = Brushes.SlateGray, StrokeThickness = 0.8 };
         if (property is null or nameof(NoteViewModel.IsBold)) _bold.Background = _vm.IsBold ? (Brush)Resources["ToolbarSelectedBrush"] : Brushes.Transparent;
         if (property is null or nameof(NoteViewModel.TextAlignment)) _alignment.Content = AlignmentIcon(_vm.TextAlignment);
         if (property is null or nameof(NoteViewModel.IsPinned)) _pin.Content = CreateIcon(_vm.IsPinned ? "M 5,10 L 5,6 C 5,0 15,0 15,6 L 15,10 M 3,10 L 17,10 L 17,22 L 3,22 Z M 10,14 L 10,18"
@@ -159,17 +158,33 @@ internal sealed class NoteFormattingToolbar : Window, IDisposable
 
     private void OpenPalette()
     {
+        var choices = new StackPanel();
         var grid = new UniformGrid { Columns = 3 };
         Popup? popup = null;
-        string[] names = ["Жёлтый", "Персиковый", "Мятный", "Голубой", "Лавандовый", "Розовый"];
-        foreach (var color in Enum.GetValues<NoteColor>())
+        foreach (var color in Enum.GetValues<NoteColor>().Where(color => !NoteThemes.Get(color).IsDark))
         {
-            var button = Button(names[(int)color], () => { _vm.Color = color; popup!.IsOpen = false; });
-            button.Content = new System.Windows.Shapes.Ellipse { Width = 20, Height = 20, Fill = (Brush)new BrushConverter().ConvertFromString(Palette[(int)color])!,
+            var theme = NoteThemes.Get(color);
+            var button = Button(theme.Name, () => { _vm.Color = color; popup!.IsOpen = false; });
+            button.Content = new System.Windows.Shapes.Ellipse { Width = 20, Height = 20, Fill = theme.Background,
                 Stroke = _vm.Color == color ? Brushes.DodgerBlue : Brushes.SlateGray, StrokeThickness = _vm.Color == color ? 2 : 0.8 };
             grid.Children.Add(button);
         }
-        popup = Popup(_color, grid);
+        choices.Children.Add(grid);
+        choices.Children.Add(new Separator());
+        foreach (var color in Enum.GetValues<NoteColor>().Where(color => NoteThemes.Get(color).IsDark))
+        {
+            var theme = NoteThemes.Get(color);
+            var button = Button(theme.Name, () => { _vm.Color = color; popup!.IsOpen = false; });
+            button.Width = 104; button.Height = 28;
+            button.Background = _vm.Color == color ? (Brush)Resources["ToolbarSelectedBrush"] : Brushes.Transparent;
+            var label = new StackPanel { Orientation = Orientation.Horizontal };
+            label.Children.Add(new System.Windows.Shapes.Ellipse { Width = 16, Height = 16, Fill = theme.Background,
+                Stroke = Brushes.SlateGray, StrokeThickness = 0.8, Margin = new Thickness(0, 0, 7, 0) });
+            label.Children.Add(new TextBlock { Text = theme.Name, VerticalAlignment = VerticalAlignment.Center });
+            button.Content = label;
+            choices.Children.Add(button);
+        }
+        popup = Popup(_color, choices);
     }
 
     private void OpenAlignment()

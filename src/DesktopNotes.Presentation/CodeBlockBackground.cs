@@ -8,8 +8,6 @@ namespace DesktopNotes.Presentation;
 internal sealed class CodeBlockBackground(LiveMarkdownEditor editor) : IBackgroundRenderer
 {
     public KnownLayer Layer => KnownLayer.Background;
-    private readonly Brush _fill = new SolidColorBrush(Color.FromArgb(18, 30, 40, 55));
-    private readonly Pen _outline = new(new SolidColorBrush(Color.FromArgb(65, 55, 65, 80)), 1);
 
     public void Draw(TextView textView, DrawingContext drawingContext)
     {
@@ -17,7 +15,7 @@ internal sealed class CodeBlockBackground(LiveMarkdownEditor editor) : IBackgrou
         foreach (var frame in editor.Layout.CodeFrames)
         {
             if (Bounds(textView, frame) is { } bounds)
-                drawingContext.DrawRoundedRectangle(_fill, _outline, bounds, 6, 6);
+                drawingContext.DrawRoundedRectangle(editor.Theme.CodeFill, editor.Theme.CodeOutline, bounds, 6, 6);
         }
     }
 

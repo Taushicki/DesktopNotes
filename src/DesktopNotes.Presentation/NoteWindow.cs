@@ -320,8 +320,12 @@ public sealed class NoteWindow : Window
         _updatingLayout = true;
         try
         {
-            Background = (Brush)new BrushConverter().ConvertFromString(NoteFormattingToolbar.Palette[(int)_vm.Color])!;
-            _editor.SetScrollBarColor(((SolidColorBrush)Background).Color);
+            var theme = NoteThemes.Get(_vm.Color);
+            Background = theme.Background; Foreground = theme.Foreground;
+            _collapseIcon.Stroke = theme.Foreground;
+            Resources["ToolbarHoverBrush"] = theme.Hover;
+            Resources["ToolbarPressedBrush"] = theme.Pressed;
+            _editor.SetTheme(theme);
             _body.Visibility = _vm.IsCollapsed ? Visibility.Collapsed : Visibility.Visible;
             _titleLabel.Visibility = _vm.IsCollapsed ? Visibility.Visible : Visibility.Collapsed;
             _collapseIcon.Data = Geometry.Parse(_vm.IsCollapsed ? "M 0,0 L 6,6 L 12,0" : "M 0,6 L 6,0 L 12,6");

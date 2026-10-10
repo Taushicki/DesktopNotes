@@ -188,15 +188,16 @@ public sealed class InlineMarkdownEditorTests
             }
             var bar = Assert.Single(Descendants(editor).OfType<System.Windows.Controls.Primitives.ScrollBar>(), b => b.Orientation == Orientation.Vertical);
             Assert.Equal(6, bar.Width); Assert.InRange(bar.ActualWidth, 5.5, 6.5); Assert.Equal(Visibility.Visible, bar.Visibility);
-            editor.SetScrollBarColor(System.Windows.Media.Colors.Lavender);
+            var lavenderTheme = NoteThemes.Get(DesktopNotes.Domain.NoteColor.Lavender);
+            editor.SetTheme(lavenderTheme);
             var thumbBrush = Assert.IsType<System.Windows.Media.SolidColorBrush>(editor.Resources["DesktopNotes.EditorScrollThumb"]);
-            Assert.Equal((byte)(System.Windows.Media.Colors.Lavender.R * .7), thumbBrush.Color.R);
+            Assert.Equal((byte)(lavenderTheme.Background.Color.R * .7), thumbBrush.Color.R);
             var beforePageUp = editor.VerticalOffset;
             System.Windows.Controls.Primitives.ScrollBar.PageUpCommand.Execute(null, bar); host.UpdateLayout();
             Assert.True(editor.VerticalOffset < beforePageUp);
             if (Environment.GetEnvironmentVariable("DESKTOPNOTES_TEST_RENDER_DIR") is { } directory)
             {
-                host.Background = System.Windows.Media.Brushes.Lavender;
+                host.Background = lavenderTheme.Background;
                 Directory.CreateDirectory(directory);
                 var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)host.ActualWidth, (int)host.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32); bitmap.Render(host);
                 var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));

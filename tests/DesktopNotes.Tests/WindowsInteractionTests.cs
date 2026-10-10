@@ -713,6 +713,54 @@ public sealed class WindowsInteractionTests
         finally { host.ClosePermanently(); external.Close(); }
     });
 
+    [Fact]
+    public Task DarkThemesUpdateEditorAndCollapsedTitleAndCanReturnToPastel() => OnStaThread(() =>
+    {
+        var notes = new NoteService(new Repository()); var note = notes.Create(-10000, -10000);
+        using var vm = new NoteViewModel(note, notes, () => { }, () => { });
+        vm.Markdown = "# Тёмная заметка\n\nТекст, **жирный** и ==маркер==\n\n[Ссылка](https://example.com)\n\n" +
+            "код: " + (char)96 + "inline" + (char)96 + "\n\n" +
+            new string((char)96, 3) + "\nConsole.WriteLine(42);\n" + new string((char)96, 3);
+        var host = new NoteWindow(vm, new Layers());
+        try
+        {
+            host.Show();
+            foreach (var color in new[] { NoteColor.GitHubDark, NoteColor.MaterialDark, NoteColor.Yellow })
+            {
+                vm.Color = color; host.UpdateLayout();
+                var theme = NoteThemes.Get(color);
+                Assert.Same(theme.Background, host.Background);
+                Assert.Same(theme.Foreground, host.Foreground);
+                Assert.Same(theme.Foreground, host.MarkdownEditor.Foreground);
+                Assert.Same(theme, host.MarkdownEditor.Theme);
+                Assert.Same(theme.Foreground, host.MarkdownEditor.TextArea.Caret.CaretBrush);
+                Assert.Same(theme.ScrollThumb, host.MarkdownEditor.Resources["DesktopNotes.EditorScrollThumb"]);
+                Assert.Same(theme.Hover, host.Resources["ToolbarHoverBrush"]);
+                if (theme.IsDark)
+                {
+                    Assert.True(theme.Foreground.Color.R > 200);
+                    Assert.True(theme.Background.Color.R < 50);
+                    Assert.NotEqual(theme.Background.Color, theme.CodeFill.Color);
+                }
+                if (Environment.GetEnvironmentVariable("DESKTOPNOTES_TEST_RENDER_DIR") is { } directory)
+                {
+                    var surface = Assert.IsType<Grid>(host.Content);
+                    var bitmap = new RenderTargetBitmap((int)host.Width, (int)host.Height, 96, 96, PixelFormats.Pbgra32);
+                    var background = new DrawingVisual();
+                    using (var dc = background.RenderOpen()) dc.DrawRectangle(theme.Background, null, new Rect(0, 0, host.Width, host.Height));
+                    bitmap.Render(background); bitmap.Render(surface);
+                    Directory.CreateDirectory(directory); var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                    using var file = File.Create(Path.Combine(directory, $"note-theme-{color}.png")); encoder.Save(file);
+                }
+                vm.ToggleCollapsed.Execute(null); host.UpdateLayout();
+                Assert.Same(theme.Foreground, host.Foreground);
+                vm.ToggleCollapsed.Execute(null);
+            }
+            Assert.Equal(NoteColor.Yellow, notes.Get(note.Id).Color);
+        }
+        finally { host.ClosePermanently(); }
+    });
+
     private static Task OnStaThread(Action action)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

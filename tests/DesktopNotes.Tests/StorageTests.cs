@@ -9,6 +9,17 @@ public sealed class StorageTests : IDisposable
 {
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "DesktopNotesTests-" + Guid.NewGuid().ToString("N"));
 
+    [Theory]
+    [InlineData(NoteColor.GitHubDark)]
+    [InlineData(NoteColor.MaterialDark)]
+    public async Task DarkThemeSurvivesSaveAndRestart(NoteColor color)
+    {
+        var repository = new JsonNoteRepository(_directory);
+        var note = new Note { Color = color, Markdown = "# Тёмная заметка", IsCollapsed = true };
+        await repository.SaveAsync([note]);
+        Assert.Equal(note, Assert.Single((await new JsonNoteRepository(_directory).LoadAsync()).Notes));
+    }
+
     [Fact]
     public async Task RoundtripPreservesAllStateAndMarkdown()
     {

@@ -19,6 +19,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 {
     private readonly MarkdownPipeline _pipeline = MarkdownPipelines.Create();
     private Note _appearance = new();
+    internal NoteTheme Theme { get; private set; } = NoteThemes.Get(NoteColor.Yellow);
     private List<PreviewBlock> _blocks = [];
     private string _parsedText = "";
     internal InlineMarkdownLayout Layout { get; private set; } = new();
@@ -44,7 +45,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         WordWrap = true; ShowLineNumbers = false;
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto; HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/DesktopNotes;component/EditorScrollBar.xaml", UriKind.Relative) });
-        SetScrollBarColor(Color.FromRgb(255, 241, 168));
+        SetTheme(Theme);
         SmoothScroll = new SmoothScrollController(this);
         Options.CutCopyWholeLine = true; Options.ConvertTabsToSpaces = true; Options.IndentationSize = 2;
         Options.InheritWordWrapIndentation = true;
@@ -67,7 +68,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.Caret.PositionChanged += OnFenceCaretChanged;
         TextArea.SelectionChanged += OnFenceCaretChanged;
         TextArea.TextEntering += OnFenceTextEntering;
-        _search = SearchPanel.Install(this); _search.Localization = new RussianSearch();
+        _search = SearchPanel.Install(this); _search.Localization = new RussianSearch(); _search.MarkerBrush = Theme.Highlight;
         System.Windows.Automation.AutomationProperties.SetName(this, "Текст заметки — Markdown Live Preview");
     }
 
@@ -256,15 +257,20 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 
     internal void SetAppearance(Note note)
     {
+        SetTheme(NoteThemes.Get(note.Color));
         _appearance = note; FontSize = note.FontSize; FontWeight = note.IsBold ? FontWeights.Bold : FontWeights.Normal;
         TextArea.TextView.Redraw();
     }
-    internal void SetScrollBarColor(Color color)
+    internal void SetTheme(NoteTheme theme)
     {
-        var brush = new SolidColorBrush(Color.FromRgb((byte)(color.R * .7), (byte)(color.G * .7), (byte)(color.B * .7)));
-        brush.Freeze();
-        Resources["DesktopNotes.EditorScrollThumb"] = brush;
+        Theme = theme;
+        Foreground = theme.Foreground;
+        TextArea.Caret.CaretBrush = theme.Foreground;
+        if (_search is not null) _search.MarkerBrush = theme.Highlight;
+        Resources["DesktopNotes.EditorScrollThumb"] = theme.ScrollThumb;
+        TextArea.TextView.Redraw();
     }
+
     internal void ApplyEdit(MarkdownTextEdit edit)
     {
         using (Document.RunUpdate()) Document.Replace(edit.Start, edit.Length, edit.Replacement);
@@ -650,12 +656,12 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
                         style.HasFlag(InlineMarkdownLayout.Style.Bold) ? FontWeights.Bold : face.Weight, face.Stretch));
                     if (range.Scale != 1) element.TextRunProperties.SetFontRenderingEmSize(editor.FontSize * range.Scale);
                     if (style.HasFlag(InlineMarkdownLayout.Style.Strike)) element.TextRunProperties.SetTextDecorations(TextDecorations.Strikethrough);
-                    if (style.HasFlag(InlineMarkdownLayout.Style.Highlight)) element.TextRunProperties.SetBackgroundBrush(Brushes.LightGoldenrodYellow);
+                    if (style.HasFlag(InlineMarkdownLayout.Style.Highlight)) element.TextRunProperties.SetBackgroundBrush(editor.Theme.Highlight);
                     if (style.HasFlag(InlineMarkdownLayout.Style.BlockCode))
                         element.TextRunProperties.SetTypeface(new Typeface(new FontFamily("Consolas"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal));
-                    else if (style.HasFlag(InlineMarkdownLayout.Style.Code)) element.TextRunProperties.SetBackgroundBrush(new SolidColorBrush(Color.FromArgb(16, 0, 0, 0)));
+                    else if (style.HasFlag(InlineMarkdownLayout.Style.Code)) element.TextRunProperties.SetBackgroundBrush(editor.Theme.InlineCode);
                     if (style.HasFlag(InlineMarkdownLayout.Style.Link))
-                    { element.TextRunProperties.SetForegroundBrush(Brushes.SteelBlue); element.TextRunProperties.SetTextDecorations(TextDecorations.Underline); }
+                    { element.TextRunProperties.SetForegroundBrush(editor.Theme.Link); element.TextRunProperties.SetTextDecorations(TextDecorations.Underline); }
                 });
             }
         }
