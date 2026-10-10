@@ -148,8 +148,12 @@ internal sealed class InlineMarkdownLayout
         var content = source.Substring(start, length).TrimEnd('\r', '\n');
         if (heading.IsSetext)
         {
-            Styles.Add(new(start, length, Style.Bold, HeadingScale(heading.Level), heading.Level));
             var delimiter = content.LastIndexOf('\n');
+            // A single dash is usually the beginning of a list while typing.
+            // Keep it visible instead of temporarily promoting the preceding text
+            // to a Setext heading. Longer underlines still format as headings.
+            if (delimiter >= 0 && content[(delimiter + 1)..].Trim() == "-") return;
+            Styles.Add(new(start, length, Style.Bold, HeadingScale(heading.Level), heading.Level));
             if (delimiter >= 0)
             {
                 var underline = content[(delimiter + 1)..].TrimEnd('\r', '\n');

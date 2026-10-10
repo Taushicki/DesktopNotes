@@ -60,6 +60,48 @@ public sealed class HeadingEditorTests
         Assert.DoesNotContain(layout.Styles, range => range.HeadingLevel > 0);
     }
 
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public Task StartingListDoesNotPromotePreviousLineToHeading(string newline) => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = $"# Заголовок{newline}{newline}Обычный текст" };
+        editor.EnableNoteTitle(); var host = Host(editor);
+        try
+        {
+            host.Show(); host.UpdateLayout();
+            var textOffset = editor.Text.IndexOf("Обычный текст", StringComparison.Ordinal);
+            var height = editor.TextArea.TextView.GetOrConstructVisualLine(editor.Document.GetLineByOffset(textOffset)).Height;
+            editor.Select(editor.Text.Length, 0);
+            Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.None));
+            editor.TextArea.PerformTextInput("-"); host.UpdateLayout();
+            var dashOffset = editor.Text.Length - 1;
+            Assert.DoesNotContain(editor.Layout.Styles, style => style.HeadingLevel > 0 && style.Start >= textOffset);
+            Assert.DoesNotContain(editor.Layout.Decorations, part => part.Kind == InlineMarkdownLayout.DecorationKind.Hidden && part.Start <= dashOffset && part.Start + part.Length > dashOffset);
+            Assert.Equal(height, editor.TextArea.TextView.GetOrConstructVisualLine(editor.Document.GetLineByOffset(textOffset)).Height);
+            editor.TextArea.PerformTextInput(" "); host.UpdateLayout();
+            Assert.Contains(editor.Layout.Decorations, part => part.Kind == InlineMarkdownLayout.DecorationKind.Bullet && part.Start == dashOffset);
+            Assert.Equal(height, editor.TextArea.TextView.GetOrConstructVisualLine(editor.Document.GetLineByOffset(textOffset)).Height);
+            editor.TextArea.PerformTextInput("Пункт"); host.UpdateLayout();
+            Assert.EndsWith("- Пункт", editor.Text);
+            Assert.DoesNotContain(editor.Layout.Styles, style => style.HeadingLevel > 0 && style.Start >= textOffset);
+        }
+        finally { host.Close(); }
+    });
+
+    [Theory]
+    [InlineData("Текст\n-", false)]
+    [InlineData("Текст\r\n  -  ", false)]
+    [InlineData("Текст\n- ", false)]
+    [InlineData("Текст\n--", true)]
+    [InlineData("Текст\n---", true)]
+    [InlineData("Текст\n===", true)]
+    public void SingleDashStaysLiteralButLongerSetextUnderlinesStillWork(string source, bool heading)
+    {
+        var layout = InlineMarkdownLayout.Create(source, Markdig.Markdown.Parse(source, MarkdownPipelines.Create()));
+        Assert.Equal(heading, layout.Styles.Any(style => style.HeadingLevel > 0));
+    }
+
     [Fact]
     public Task HeadingCommandsPreserveBlankLinesAndUndo() => OnSta(() =>
     {
