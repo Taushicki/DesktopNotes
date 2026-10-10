@@ -273,6 +273,42 @@ public sealed class WindowsInteractionTests
     });
 
     [Fact]
+    public Task MovingConnectionReusesSurfaceAndStillDrawsAtTheLatestEndpoints() => OnStaThread(() =>
+    {
+        var host = new Window { Left = -10000, Top = -10000, Width = 320, Height = 280, ShowActivated = false, ShowInTaskbar = false };
+        var arrow = new ArrowOverlay(interactive: true);
+        try
+        {
+            host.Show();
+            var owner = new System.Windows.Interop.WindowInteropHelper(host).Handle;
+            DiagramPoint[] points = [new(-9800, -9800), new(-9500, -9800)];
+            arrow.Draw(points, new LinkStyle(), owner, owner); arrow.UpdateLayout();
+            var handle = new System.Windows.Interop.WindowInteropHelper(arrow).Handle;
+            var original = NativeWindows.Rect(handle);
+            var visual = Assert.IsType<ArrowOverlay.ArrowVisual>(arrow.Content);
+            for (var offset = 1; offset <= 80; offset++)
+            {
+                var moved = points.Select(p => new DiagramPoint(p.X + offset, p.Y + offset)).ToArray();
+                arrow.Draw(moved, new LinkStyle(), owner, owner);
+                Assert.Equal(original, NativeWindows.Rect(handle));
+                Assert.Equal(moved, visual.Points);
+                Assert.True(visual.ContainsPoint(new Point(
+                    (moved[0].X + 50 - visual.PhysicalOrigin.Left) / visual.Scale,
+                    (moved[0].Y - visual.PhysicalOrigin.Top) / visual.Scale)));
+            }
+            var distant = points.Select(p => new DiagramPoint(p.X + 500, p.Y + 500)).ToArray();
+            arrow.Draw(distant, new LinkStyle(), owner, owner); arrow.UpdateLayout();
+            var expanded = NativeWindows.Rect(handle);
+            Assert.NotEqual(original, expanded);
+            Assert.All(distant, p => {
+                Assert.InRange(p.X, expanded.Left + 40, expanded.Right - 40);
+                Assert.InRange(p.Y, expanded.Top + 40, expanded.Bottom - 40);
+            });
+        }
+        finally { arrow.Close(); host.Close(); }
+    });
+
+    [Fact]
     public Task RoundedCornerHitAreaFollowsTheRoundedPath() => OnStaThread(() =>
     {
         var visual = new ArrowOverlay.ArrowVisual

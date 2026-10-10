@@ -41,6 +41,7 @@ internal sealed class EdgeLinkHandles : Grid, IDisposable
 
     internal void SetState(bool selected, bool targeted)
     {
+        if (IsSelected == selected && _targeted == targeted) return;
         IsSelected = selected; _targeted = targeted;
         Refresh();
     }

@@ -21,6 +21,8 @@ internal sealed class BoardInteractionController : IDisposable
     private readonly Dictionary<Guid, NoteWindow> _windows = [];
     private readonly Dictionary<Guid, ArrowOverlay> _arrows = [];
     private readonly LinkSelectionSession _linkSelection;
+    private readonly Dictionary<Guid, (NoteSide Source, NoteSide Target)> _linkSides = [];
+    private NoteSide? _previewSide, _previewTargetSide;
     private Dictionary<Guid, ScreenRect>? _dragOrigins;
     private Guid? _leader;
     private double _dragScale;
@@ -45,7 +47,7 @@ internal sealed class BoardInteractionController : IDisposable
         clicks.UnmodifiedClick += OnDesktopClick;
         // Win+D and minimizing a note can change native visibility without a WPF visibility event.
         _visibilityTimer = new DispatcherTimer(TimeSpan.FromMilliseconds(200), DispatcherPriority.Background,
-            (_, _) => { if (_arrows.Count > 0) RefreshArrows(); }, dispatcher);
+            (_, _) => { if (_arrows.Count > 0) ScheduleRefresh(); }, dispatcher);
         _visibilityTimer.Start();
 
     }
@@ -214,6 +216,8 @@ internal sealed class BoardInteractionController : IDisposable
         _linkSelection.Clear();
         SelectConnectionNote(source);
         _linkSource = source;
+        _previewSide = side;
+        _previewTargetSide = null;
         _linkPreview = new ArrowOverlay();
         Mouse.OverrideCursor = Cursors.Cross;
         UpdateLinkPreview();
@@ -243,12 +247,22 @@ internal sealed class BoardInteractionController : IDisposable
         _linkTarget = DropTarget();
         var source = NativeWindows.Rect(_linkSource.Handle).Bounds;
         IReadOnlyList<DiagramPoint> points;
-        if (_linkTarget is not null) points = ArrowRouter.Route(source, NativeWindows.Rect(_linkTarget.Handle).Bounds, clearance: 32 * NativeWindows.Scale(_linkSource.Handle));
+        var scale = NativeWindows.Scale(_linkSource.Handle);
+        if (_linkTarget != previousTarget) _previewTargetSide = null;
+        if (_linkTarget is not null)
+        {
+            var target = NativeWindows.Rect(_linkTarget.Handle).Bounds;
+            points = ArrowRouter.Route(source, target, clearance: 32 * scale,
+                previousSourceSide: _previewSide, previousTargetSide: _previewTargetSide, sideHysteresis: 12 * scale);
+            _previewSide = ArrowRouter.NearestSide(source, points[0]);
+            _previewTargetSide = ArrowRouter.NearestSide(target, points[^1]);
+        }
         else
         {
             var cursor = NativeWindows.Cursor();
             var end = new DiagramPoint(cursor.X, cursor.Y);
-            points = ArrowRouter.FromSide(source, end, ArrowRouter.NearestSide(source, end), 32 * NativeWindows.Scale(_linkSource.Handle));
+            _previewSide = ArrowRouter.NearestSide(source, end, _previewSide, 12 * scale);
+            points = ArrowRouter.FromSide(source, end, _previewSide.Value, 32 * scale);
         }
         _linkPreview.Draw(points, new LinkStyle(), _linkSource.Handle, _linkTarget?.Handle ?? _linkSource.Handle);
         if (previousTarget != _linkTarget) RefreshFrames();
@@ -266,8 +280,15 @@ internal sealed class BoardInteractionController : IDisposable
     private void CompleteLink()
     {
         if (_linkSource is null) return;
-        var target = DropTarget();
-        if (target is not null) _notes.AddLink(_linkSource.NoteId, target.NoteId);
+        UpdateLinkPreview();
+        if (_linkSource is null) return;
+        if (_linkTarget is not null)
+        {
+            var link = _notes.AddLink(_linkSource.NoteId, _linkTarget.NoteId);
+            // Preserve the final preview anchors when it becomes a saved connection.
+            if (_previewSide is { } sourceSide && _previewTargetSide is { } targetSide)
+                _linkSides[link.Id] = (sourceSide, targetSide);
+        }
         CancelLink();
     }
 
@@ -297,13 +318,16 @@ internal sealed class BoardInteractionController : IDisposable
     {
         if (_refreshPending || _disposed) return;
         _refreshPending = true;
-        _dispatcher.BeginInvoke(DispatcherPriority.Render, () =>
-        {
-            _refreshPending = false;
-            if (_disposed) return;
-            RefreshFrames();
-            RefreshArrows();
-        });
+        CompositionTarget.Rendering += OnBoardRendering;
+    }
+
+    private void OnBoardRendering(object? sender, EventArgs args)
+    {
+        CompositionTarget.Rendering -= OnBoardRendering;
+        _refreshPending = false;
+        if (_disposed) return;
+        RefreshFrames();
+        RefreshArrows();
     }
 
     private void RefreshFrames()
@@ -327,7 +351,7 @@ internal sealed class BoardInteractionController : IDisposable
         if (_disposed) return;
         var links = _notes.Links;
         if (_linkSelection.SelectedId is { } selected && !links.Any(link => link.Id == selected)) _linkSelection.Clear();
-        foreach (var id in _arrows.Keys.Except(links.Select(l => l.Id)).ToArray()) { _arrows[id].Close(); _arrows.Remove(id); }
+        foreach (var id in _arrows.Keys.Except(links.Select(l => l.Id)).ToArray()) { _arrows[id].Close(); _arrows.Remove(id); _linkSides.Remove(id); }
         foreach (var link in links)
         {
             if (!_windows.TryGetValue(link.SourceId, out var source) || !_windows.TryGetValue(link.TargetId, out var target) ||
@@ -345,8 +369,14 @@ internal sealed class BoardInteractionController : IDisposable
                 arrow.DeselectRequested += () => { if (_linkSelection.SelectedId == link.Id) _linkSelection.Clear(); };
                 _arrows.Add(link.Id, arrow);
             }
-            arrow.Draw(ArrowRouter.Route(NativeWindows.Rect(source.Handle).Bounds, NativeWindows.Rect(target.Handle).Bounds, clearance: 32 * NativeWindows.Scale(source.Handle)),
-                link.Style, source.Handle, target.Handle);
+            var sourceBounds = NativeWindows.Rect(source.Handle).Bounds;
+            var targetBounds = NativeWindows.Rect(target.Handle).Bounds;
+            var scale = NativeWindows.Scale(source.Handle);
+            var hadSides = _linkSides.TryGetValue(link.Id, out var sides);
+            var points = ArrowRouter.Route(sourceBounds, targetBounds, clearance: 32 * scale,
+                previousSourceSide: hadSides ? sides.Source : null, previousTargetSide: hadSides ? sides.Target : null, sideHysteresis: 12 * scale);
+            _linkSides[link.Id] = (ArrowRouter.NearestSide(sourceBounds, points[0]), ArrowRouter.NearestSide(targetBounds, points[^1]));
+            arrow.Draw(points, link.Style, source.Handle, target.Handle);
             arrow.SetSelected(_linkSelection.SelectedId == link.Id);
         }
     }
@@ -363,6 +393,7 @@ internal sealed class BoardInteractionController : IDisposable
         if (_disposed) return;
         _disposed = true;
         _visibilityTimer.Stop();
+        CompositionTarget.Rendering -= OnBoardRendering;
         StopLinkRendering();
         _linkSelection.Changed -= RefreshArrowSelection;
         _notes.Changed -= ScheduleRefresh;

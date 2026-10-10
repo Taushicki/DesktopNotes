@@ -64,13 +64,19 @@ internal static class NativeWindows
     public static double Scale(nint window) { var dpi = GetDpiForWindow(window); return dpi == 0 ? 1 : dpi / 96.0; }
     public static bool IsShown(nint window) => window != 0 && IsWindowVisible(window) && !IsIconic(window);
     public static void Move(nint window, int x, int y) => SetWindowPos(window, 0, x, y, 0, 0, 0x0001 | 0x0004 | 0x0010);
-    public static void SetBounds(nint window, ScreenRect rectangle) => SetWindowPos(window, 0, rectangle.Left, rectangle.Top, rectangle.Width, rectangle.Height, 0x0004 | 0x0010);
+    public static void SetBounds(nint window, ScreenRect rectangle)
+    {
+        var current = Rect(window);
+        if (current.Left == rectangle.Left && current.Top == rectangle.Top && current.Right == rectangle.Right && current.Bottom == rectangle.Bottom) return;
+        SetWindowPos(window, 0, rectangle.Left, rectangle.Top, rectangle.Width, rectangle.Height, 0x0004 | 0x0010);
+    }
     public static void PutBehind(nint overlay, nint first, nint second)
     {
         var lower = first;
         var current = first;
         for (var i = 0; current != 0 && i < 4096; i++, current = GetWindow(current, 2))
             if (current == second) { lower = second; break; }
+        if (GetWindow(overlay, 3) == lower) return;
         SetWindowPos(overlay, lower, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
     }
 

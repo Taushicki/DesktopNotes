@@ -259,6 +259,34 @@ public sealed class BoardTests
     }
 
     [Fact]
+    public void PreviewKeepsAttachmentAtDiagonalBoundaryButStillSwitchesAfterMovingAway()
+    {
+        var source = new NoteBounds(0, 0, 100, 100);
+        foreach (var side in new[] { NoteSide.Right, NoteSide.Bottom })
+            foreach (var offset in new[] { -2d, 0d, 2d })
+                Assert.Equal(side, ArrowRouter.NearestSide(source, new(150 + offset, 150), side));
+        Assert.Equal(NoteSide.Right, ArrowRouter.NearestSide(source, new(300, 50), NoteSide.Bottom));
+        Assert.Equal(NoteSide.Bottom, ArrowRouter.NearestSide(source, new(50, 300), NoteSide.Right));
+    }
+
+    [Fact]
+    public void ConnectionKeepsAttachmentPairDuringSmallMovesAndReanchorsAfterLargeMoves()
+    {
+        var source = new NoteBounds(0, 0, 100, 100);
+        foreach (var offset in new[] { -2d, 0d, 2d })
+        {
+            var target = new NoteBounds(250 + offset, 250, 100, 100);
+            var route = ArrowRouter.Route(source, target, previousSourceSide: NoteSide.Right, previousTargetSide: NoteSide.Top);
+            Assert.Equal(ArrowRouter.Anchor(source, NoteSide.Right), route[0]);
+            Assert.Equal(ArrowRouter.Anchor(target, NoteSide.Top), route[^1]);
+        }
+        var moved = new NoteBounds(0, 400, 100, 100);
+        var switched = ArrowRouter.Route(source, moved, previousSourceSide: NoteSide.Right, previousTargetSide: NoteSide.Top);
+        Assert.Equal(ArrowRouter.Anchor(source, NoteSide.Bottom), switched[0]);
+        Assert.Equal(ArrowRouter.Anchor(moved, NoteSide.Top), switched[^1]);
+    }
+
+    [Fact]
     public void SelectingAndDeletingConnectionPreservesOtherConnectionsAndNotes()
     {
         var service = new NoteService(new Repository());

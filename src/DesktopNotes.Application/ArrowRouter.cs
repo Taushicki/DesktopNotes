@@ -6,10 +6,20 @@ public readonly record struct DiagramPoint(double X, double Y);
 
 public static class ArrowRouter
 {
-    public static NoteSide NearestSide(NoteBounds bounds, DiagramPoint point) => Enum.GetValues<NoteSide>()
-        .MinBy(side => DistanceSquared(Anchor(bounds, side), point));
+    private static readonly NoteSide[] Sides = Enum.GetValues<NoteSide>();
 
-    private static double DistanceSquared(DiagramPoint a, DiagramPoint b) => Math.Pow(a.X - b.X, 2) + Math.Pow(a.Y - b.Y, 2);
+    public static NoteSide NearestSide(NoteBounds bounds, DiagramPoint point, NoteSide? previous = null, double hysteresis = 12)
+    {
+        var best = Sides.MinBy(side => DistanceSquared(Anchor(bounds, side), point));
+        return previous is { } old && Math.Sqrt(DistanceSquared(Anchor(bounds, old), point)) <=
+            Math.Sqrt(DistanceSquared(Anchor(bounds, best), point)) + hysteresis ? old : best;
+    }
+
+    private static double DistanceSquared(DiagramPoint a, DiagramPoint b)
+    {
+        var dx = a.X - b.X; var dy = a.Y - b.Y;
+        return dx * dx + dy * dy;
+    }
     private static bool Horizontal(NoteSide side) => side is NoteSide.Left or NoteSide.Right;
 
     public static DiagramPoint Anchor(NoteBounds bounds, NoteSide side) => side switch
@@ -59,16 +69,23 @@ public static class ArrowRouter
         return Clean([start, outward, new(x, outward.Y), new(x, end.Y), end]);
     }
 
-    public static IReadOnlyList<DiagramPoint> Route(NoteBounds source, NoteBounds target, NoteSide? sourceSide = null, double clearance = 32)
+    public static IReadOnlyList<DiagramPoint> Route(NoteBounds source, NoteBounds target, NoteSide? sourceSide = null, double clearance = 32,
+        NoteSide? previousSourceSide = null, NoteSide? previousTargetSide = null, double sideHysteresis = 12)
     {
         if (sourceSide is { } fixedSide)
         {
             var end = Anchor(target, NearestSide(target, Anchor(source, fixedSide)));
             return FromSide(source, end, fixedSide, clearance);
         }
-        var pairs = from a in Enum.GetValues<NoteSide>() from b in Enum.GetValues<NoteSide>()
+        var pairs = from a in Sides from b in Sides
                     select (SourceSide: a, TargetSide: b, Start: Anchor(source, a), End: Anchor(target, b));
         var pair = pairs.MinBy(pair => DistanceSquared(pair.Start, pair.End));
+        if (previousSourceSide is { } oldSource && previousTargetSide is { } oldTarget)
+        {
+            var oldStart = Anchor(source, oldSource); var oldEnd = Anchor(target, oldTarget);
+            if (Math.Sqrt(DistanceSquared(oldStart, oldEnd)) <= Math.Sqrt(DistanceSquared(pair.Start, pair.End)) + sideHysteresis)
+                pair = (oldSource, oldTarget, oldStart, oldEnd);
+        }
         var start = pair.Start; var finish = pair.End;
         var overlapping = source.X < target.Right && source.Right > target.X && source.Y < target.Bottom && source.Bottom > target.Y;
         // Touching endpoints need an outside route rather than an invisible zero-length line.

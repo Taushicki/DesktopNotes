@@ -43,7 +43,9 @@ internal sealed class ArrowOverlay : Window
         if (!interactive) return;
         MouseMove += (_, e) =>
         {
-            _visual.IsHovered = _visual.ContainsPoint(e.GetPosition(_visual));
+            var hovered = _visual.ContainsPoint(e.GetPosition(_visual));
+            if (_visual.IsHovered == hovered) return;
+            _visual.IsHovered = hovered;
             Cursor = _visual.IsHovered ? Cursors.Hand : Cursors.Arrow;
             _visual.InvalidateVisual();
         };
@@ -96,9 +98,20 @@ internal sealed class ArrowOverlay : Window
             };
         }
         if (IsVisible && _source == source && _target == target && _visual.LinkStyle == style && _visual.Points.SequenceEqual(points)) return;
+        if (_interactive)
+        {
+            // Reuse the layered surface across nearby frames instead of resizing
+            // and changing its coordinate origin for every moving endpoint.
+            var currentBounds = _interop.Handle == 0 ? default : NativeWindows.Rect(_interop.Handle);
+            if (currentBounds.Left <= rect.Left && currentBounds.Top <= rect.Top &&
+                currentBounds.Right >= rect.Right && currentBounds.Bottom >= rect.Bottom)
+                rect = currentBounds;
+            else
+                rect = new ScreenRect { Left = rect.Left - 128, Top = rect.Top - 128, Right = rect.Right + 128, Bottom = rect.Bottom + 128 };
+        }
         _source = source; _target = target;
         _interop.EnsureHandle();
-        if (!IsVisible) Show();
+        var wasVisible = IsVisible;
         var current = NativeWindows.Rect(_interop.Handle);
         if (current.Left != rect.Left || current.Top != rect.Top || current.Right != rect.Right || current.Bottom != rect.Bottom)
             NativeWindows.SetBounds(_interop.Handle, rect);
@@ -106,6 +119,7 @@ internal sealed class ArrowOverlay : Window
         _visual.LinkStyle = style;
         _visual.PhysicalOrigin = NativeWindows.Rect(_interop.Handle);
         _visual.Scale = NativeWindows.Scale(_interop.Handle);
+        if (!wasVisible) Show();
         if (_interactive) NativeWindows.PutBehind(_interop.Handle, source, target);
         UpdateAdornments();
         _visual.InvalidateVisual();
@@ -167,8 +181,17 @@ internal sealed class ArrowOverlay : Window
         private double StrokeWidth => LegacyStandard ? 3 : LinkStyle.Width;
         private Point Local(DiagramPoint point) => new((point.X - PhysicalOrigin.Left) / Scale, (point.Y - PhysicalOrigin.Top) / Scale);
 
+        private DiagramPoint[] _shapePoints = [];
+        private ScreenRect _shapeOrigin;
+        private double _shapeScale, _shapeWidth;
+        private LinkRoute _shapeRoute;
+        private (Geometry Line, Geometry Head)? _shapes;
+
         private (Geometry Line, Geometry Head) Shapes()
         {
+            if (_shapes is { } cached && _shapeOrigin.Equals(PhysicalOrigin) && _shapeScale == Scale &&
+                _shapeWidth == StrokeWidth && _shapeRoute == LinkStyle.Route && _shapePoints.SequenceEqual(Points))
+                return cached;
             var geometry = new StreamGeometry();
             var head = new StreamGeometry();
             if (Points.Count < 2) return (geometry, head);
@@ -215,6 +238,10 @@ internal sealed class ArrowOverlay : Window
                 context.LineTo(end - direction * length + normal * halfWidth, true, false);
                 context.LineTo(end - direction * length - normal * halfWidth, true, false);
             }
+            geometry.Freeze(); head.Freeze();
+            _shapePoints = Points.ToArray();
+            _shapeOrigin = PhysicalOrigin; _shapeScale = Scale; _shapeWidth = StrokeWidth; _shapeRoute = LinkStyle.Route;
+            _shapes = (geometry, head);
             return (geometry, head);
         }
 
@@ -248,7 +275,9 @@ internal sealed class ArrowOverlay : Window
             if (IsHovered) dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(30, 74, 164, 255)), width + 4), geometry);
             dc.DrawGeometry(null, pen, geometry);
             dc.DrawGeometry(brush, null, head);
-            if (IsSelected)
+            // Interactive overlays use owned endpoint windows above the notes.
+            // Drawing the same rings here leaves a second, lagging copy underneath.
+            if (IsSelected && !Interactive)
             {
                 var blue = new Pen(new SolidColorBrush(Color.FromRgb(74, 164, 255)), 1.8);
                 dc.DrawEllipse(Brushes.White, blue, Local(Points[0]), 6, 6);
