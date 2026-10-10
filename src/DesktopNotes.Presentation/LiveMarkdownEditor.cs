@@ -26,6 +26,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     private bool _previewDisabled;
     private bool _noteTitle;
     private bool _normalizingTitle;
+    private bool _redirectingFenceCaret;
     internal sealed record PreviewBlock(int Start, int Length, bool IsCode = false, bool IsTable = false);
     internal IReadOnlyList<PreviewBlock> PreviewBlocks => _blocks;
     internal event Action<string>? OpenNoteRequested;
@@ -57,6 +58,8 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         PreviewKeyDown += OnKey;
         PreviewTextInput += OnTextInput;
         TextArea.PreviewMouseLeftButtonDown += OnEditorMouseDown;
+        TextArea.Caret.PositionChanged += OnFenceCaretChanged;
+        TextArea.SelectionChanged += OnFenceCaretChanged;
         _search = SearchPanel.Install(this); _search.Localization = new RussianSearch();
         System.Windows.Automation.AutomationProperties.SetName(this, "Текст заметки — Markdown Live Preview");
     }
@@ -123,6 +126,53 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     {
         if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
         if (HandleInteractiveClick(e)) e.Handled = true;
+    }
+
+    private void OnFenceCaretChanged(object? sender, EventArgs e)
+    {
+        if (_disposed || _redirectingFenceCaret || Document.IsInUpdate || _parsedText != Text || SelectionLength != 0) return;
+        var line = Document.GetLineByOffset(CaretOffset);
+        foreach (var frame in Layout.CodeFrames)
+        {
+            if (frame.ContentStart is not { } start) continue;
+            var openingLine = Document.GetLineByOffset(frame.Start);
+            var closingLine = frame.ClosingStart is { } closing ? Document.GetLineByOffset(closing) : null;
+            if (line != openingLine && line != closingLine) continue;
+            if (line == openingLine && !Layout.Decorations.Any(part => part.Start == frame.Start && part.Kind == InlineMarkdownLayout.DecorationKind.Hidden)) continue;
+            if (frame.ClosingStart == start) continue; // A source-only, two-fence block has no body row yet.
+            var target = line == openingLine ? start : Document.GetLineByOffset(frame.ClosingStart!.Value - 1).EndOffset;
+            _redirectingFenceCaret = true;
+            try { Select(target, 0); }
+            finally { _redirectingFenceCaret = false; }
+            return;
+        }
+    }
+
+    private bool TryLeaveCodeBlock(Key key)
+    {
+        foreach (var frame in Layout.CodeFrames)
+        {
+            if (frame.ContentStart is not { } start || frame.ClosingStart is not { } closing || start >= closing) continue;
+            var first = Document.GetLineByOffset(start);
+            var last = Document.GetLineByOffset(closing - 1);
+            var current = Document.GetLineByOffset(CaretOffset);
+            if (current != first && current != last) continue;
+            var visual = TextArea.TextView.GetOrConstructVisualLine(current);
+            var row = visual.GetTextLine(TextArea.Caret.VisualColumn);
+            var before = current == first && (key == Key.Up && row == visual.TextLines[0] || key == Key.Left && CaretOffset == start);
+            var after = current == last && (key == Key.Down && row == visual.TextLines[^1] || key == Key.Right && CaretOffset == last.EndOffset);
+            var opening = Document.GetLineByOffset(frame.Start);
+            var ending = Document.GetLineByOffset(closing);
+            if (before && opening.PreviousLine is { } previous) { Select(previous.EndOffset, 0); return true; }
+            if (after && ending.NextLine is { } next) { Select(next.Offset, 0); return true; }
+            if (after && ending.NextLine is null)
+            {
+                var newline = Text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+                ApplyEdit(new(ending.EndOffset, 0, newline, newline.Length, 0));
+                return true;
+            }
+        }
+        return false;
     }
     internal bool HandleInteractiveClick(MouseButtonEventArgs e)
     {
@@ -193,6 +243,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     }
     internal bool HandleShortcut(Key key, ModifierKeys modifiers)
     {
+        if (modifiers == ModifierKeys.None && SelectionLength == 0 && key is Key.Up or Key.Down or Key.Left or Key.Right && TryLeaveCodeBlock(key)) return true;
         if (key == Key.Back && modifiers == ModifierKeys.None && SelectionLength == 0 && TryUnwrapCodeBlock()) return true;
         if (key == Key.Enter && modifiers == ModifierKeys.Shift)
         {
@@ -546,6 +597,8 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         if (_disposed) return; _disposed = true;
         TextChanged -= OnTextChanged; PreviewKeyDown -= OnKey;
         TextArea.PreviewMouseLeftButtonDown -= OnEditorMouseDown;
+        TextArea.Caret.PositionChanged -= OnFenceCaretChanged;
+        TextArea.SelectionChanged -= OnFenceCaretChanged;
         PreviewTextInput -= OnTextInput; _search.Uninstall();
     }
 

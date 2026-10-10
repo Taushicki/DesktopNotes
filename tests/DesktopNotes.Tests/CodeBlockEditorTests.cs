@@ -235,6 +235,60 @@ public sealed class CodeBlockEditorTests
         finally { host.Close(); }
     });
 
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public Task HiddenFencesRedirectCaretIntoCodeAndArrowKeysCanLeaveBlock(string newline) => OnSta(() =>
+    {
+        var source = $"Before{newline}```{newline}code{newline}```{newline}After";
+        using var editor = new LiveMarkdownEditor { Text = source };
+        var host = new Window { Content = editor, Width = 330, Height = 280, Left = -10000, Top = -10000, ShowActivated = false, ShowInTaskbar = false };
+        try
+        {
+            host.Show(); host.UpdateLayout(); var frame = Assert.Single(editor.Layout.CodeFrames);
+            editor.Select(frame.Start, 0); Assert.Equal(frame.ContentStart, editor.CaretOffset);
+            editor.TextArea.PerformTextInput("X"); Assert.Contains("\nXcode", editor.Text);
+            frame = Assert.Single(editor.Layout.CodeFrames);
+            editor.Select(frame.ClosingStart!.Value, 0);
+            Assert.Equal(editor.Document.GetLineByOffset(frame.ClosingStart.Value - 1).EndOffset, editor.CaretOffset);
+            editor.TextArea.PerformTextInput("Y"); Assert.Contains("XcodeY", editor.Text);
+            frame = Assert.Single(editor.Layout.CodeFrames);
+            editor.Select(frame.ContentStart!.Value, 0);
+            Assert.True(editor.HandleShortcut(Key.Up, ModifierKeys.None)); Assert.Equal("Before".Length, editor.CaretOffset);
+            editor.Select(editor.Document.GetLineByOffset(frame.ClosingStart!.Value - 1).EndOffset, 0);
+            Assert.True(editor.HandleShortcut(Key.Down, ModifierKeys.None));
+            Assert.Equal(editor.Text.IndexOf("After", StringComparison.Ordinal), editor.CaretOffset);
+            editor.Select(frame.Start, frame.End - frame.Start); Assert.StartsWith("```", editor.SelectedText); Assert.EndsWith("```", editor.SelectedText);
+            editor.Select(frame.ContentStart.Value, 0);
+            Assert.True(editor.HandleShortcut(Key.Back, ModifierKeys.None)); Assert.Contains("XcodeY", editor.Text); Assert.Empty(editor.Layout.CodeFrames);
+            editor.Undo(); Assert.Single(editor.Layout.CodeFrames);
+        }
+        finally { host.Close(); }
+    });
+
+    [Fact]
+    public Task DownCanLeaveCodeAtEndOfDocumentAndWrappedRowsStillNavigateNormally() => OnSta(() =>
+    {
+        var source = "# Заголовок\n\n```\nДлинная строка кода с несколькими переносами в узком стикере\n```";
+        using var editor = new LiveMarkdownEditor { Text = source };
+        var host = new Window { Content = editor, Width = 220, Height = 350, Left = -10000, Top = -10000, ShowActivated = false, ShowInTaskbar = false };
+        try
+        {
+            host.Show(); host.UpdateLayout(); var frame = Assert.Single(editor.Layout.CodeFrames);
+            var line = editor.TextArea.TextView.GetOrConstructVisualLine(editor.Document.GetLineByOffset(frame.ContentStart!.Value));
+            Assert.True(line.TextLines.Count > 1);
+            editor.Select(frame.ContentStart.Value + 3, 0);
+            Assert.False(editor.HandleShortcut(Key.Down, ModifierKeys.None));
+            editor.Select(editor.Document.GetLineByOffset(frame.ClosingStart!.Value - 1).EndOffset, 0);
+            Assert.False(editor.HandleShortcut(Key.Up, ModifierKeys.None));
+            Assert.True(editor.HandleShortcut(Key.Down, ModifierKeys.None));
+            Assert.Equal(source + "\n", editor.Text); Assert.Equal(editor.Text.Length, editor.CaretOffset);
+            editor.TextArea.PerformTextInput("После"); Assert.EndsWith("```\nПосле", editor.Text);
+            editor.Undo(); editor.Undo(); Assert.Equal(source, editor.Text);
+        }
+        finally { host.Close(); }
+    });
+
     private static Task OnSta(Action action)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
