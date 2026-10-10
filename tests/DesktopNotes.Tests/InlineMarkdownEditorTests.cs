@@ -206,6 +206,36 @@ public sealed class InlineMarkdownEditorTests
         finally { host.Close(); }
     });
 
+    [Fact]
+    public Task WheelScrollAdvancesGraduallyAndEditingCancelsPendingMotion() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = string.Join("\n", Enumerable.Range(1, 50).Select(n => $"Строка {n}")) };
+        var host = Host(editor); host.Height = 180;
+        try
+        {
+            host.Show(); host.UpdateLayout();
+            void Wheel(int delta) => editor.RaiseEvent(new MouseWheelEventArgs(Mouse.PrimaryDevice, 0, delta) { RoutedEvent = Mouse.PreviewMouseWheelEvent });
+            Wheel(-120);
+            Assert.True(editor.SmoothScroll.IsAnimating); Assert.Equal(0, editor.VerticalOffset);
+            editor.SmoothScroll.Advance(TimeSpan.FromMilliseconds(60)); host.UpdateLayout();
+            var intermediate = editor.VerticalOffset; Assert.True(intermediate > 0);
+            editor.SmoothScroll.Advance(TimeSpan.FromMilliseconds(180)); host.UpdateLayout();
+            Assert.True(editor.VerticalOffset > intermediate); Assert.False(editor.SmoothScroll.IsAnimating);
+            Wheel(-120); Assert.True(editor.SmoothScroll.IsAnimating);
+            editor.Select(editor.Text.Length, 0); Assert.True(editor.HandleShortcut(Key.Enter, ModifierKeys.None));
+            Assert.False(editor.SmoothScroll.IsAnimating); host.UpdateLayout();
+            editor.Dispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.Background); host.UpdateLayout();
+            var offset = editor.VerticalOffset;
+            editor.SmoothScroll.Advance(TimeSpan.FromMilliseconds(180)); host.UpdateLayout();
+            Assert.Equal(offset, editor.VerticalOffset);
+            editor.ScrollToHome(); host.UpdateLayout();
+            Wheel(120); Assert.False(editor.SmoothScroll.IsAnimating); Assert.Equal(0, editor.VerticalOffset);
+            Wheel(-120); Assert.True(editor.SmoothScroll.IsAnimating);
+            host.Close(); editor.Dispose(); Assert.False(editor.SmoothScroll.IsAnimating);
+        }
+        finally { host.Close(); }
+    });
+
     private static Window Host(object content) => new() { Content = content, Left = -10000, Top = -10000, Width = 320, Height = 500, ShowActivated = false, ShowInTaskbar = false };
     private static string Geometry(TextEditor editor) => string.Join(";", editor.TextArea.TextView.VisualLines.Select(line =>
         $"{line.StartOffset}:{line.VisualTop:R}:{line.Height:R}:" + string.Join(",", line.TextLines.Select(text => $"{text.WidthIncludingTrailingWhitespace:R}/{text.Height:R}"))));

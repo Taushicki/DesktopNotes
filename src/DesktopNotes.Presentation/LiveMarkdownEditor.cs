@@ -35,6 +35,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     internal event Action? ContentGeometryChanged;
     private readonly InlineGenerator _generator;
     private readonly SearchPanel _search;
+    internal SmoothScrollController SmoothScroll { get; }
 
     internal LiveMarkdownEditor()
     {
@@ -44,6 +45,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto; HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/DesktopNotes;component/EditorScrollBar.xaml", UriKind.Relative) });
         SetScrollBarColor(Color.FromRgb(255, 241, 168));
+        SmoothScroll = new SmoothScrollController(this);
         Options.CutCopyWholeLine = true; Options.ConvertTabsToSpaces = true; Options.IndentationSize = 2;
         Options.InheritWordWrapIndentation = true;
         Options.ShowSpaces = false; Options.ShowTabs = false; Options.ShowEndOfLine = false; Options.ShowBoxForControlCharacters = false;
@@ -665,6 +667,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;
+        SmoothScroll.Dispose();
         Loaded -= OnEditorLoaded;
         TextChanged -= OnTextChanged; PreviewKeyDown -= OnKey;
         TextArea.PreviewMouseLeftButtonDown -= OnEditorMouseDown;
