@@ -37,6 +37,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     private readonly InlineGenerator _generator;
     private readonly SearchPanel _search;
     internal SmoothScrollController SmoothScroll { get; }
+    internal TableEdgeControls TableControls { get; }
 
     internal LiveMarkdownEditor()
     {
@@ -47,6 +48,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/DesktopNotes;component/EditorScrollBar.xaml", UriKind.Relative) });
         SetTheme(Theme);
         SmoothScroll = new SmoothScrollController(this);
+        TableControls = new TableEdgeControls(this);
         Options.CutCopyWholeLine = true; Options.ConvertTabsToSpaces = true; Options.IndentationSize = 2;
         Options.InheritWordWrapIndentation = true;
         Options.ShowSpaces = false; Options.ShowTabs = false; Options.ShowEndOfLine = false; Options.ShowBoxForControlCharacters = false;
@@ -670,7 +672,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;
-        SmoothScroll.Dispose();
+        SmoothScroll.Dispose(); TableControls.Dispose();
         Loaded -= OnEditorLoaded;
         TextChanged -= OnTextChanged; PreviewKeyDown -= OnKey;
         TextArea.PreviewMouseLeftButtonDown -= OnEditorMouseDown;
