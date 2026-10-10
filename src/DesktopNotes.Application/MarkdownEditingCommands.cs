@@ -92,7 +92,14 @@ public static class MarkdownEditingCommands
         var match = Regex.Match(current, @"^([ \t]*)(?:(?<bullet>[-+*])|(?<number>\d+)(?<delimiter>[.)])|(?<quote>>)) (?<task>\[[ xX]\] )?");
         if (!match.Success) return new(caret, 0, newline, newline.Length, 0);
         var lineEnd = text.IndexOf('\n', caret); if (lineEnd < 0) lineEnd = text.Length;
-        if (string.IsNullOrWhiteSpace(text[(start + match.Length)..lineEnd])) return new(start, match.Length, "", 0, 0);
+        if (lineEnd > start && text[lineEnd - 1] == '\r') lineEnd--;
+        if (string.IsNullOrWhiteSpace(text[(start + match.Length)..lineEnd]))
+        {
+            // A blank separator prevents subsequent text from being parsed as
+            // a lazy continuation of the previous list item or quote.
+            var separator = start > 0 ? newline : "";
+            return new(start, lineEnd - start, separator, separator.Length, 0);
+        }
         var prefix = match.Groups[1].Value;
         if (match.Groups["number"].Success && int.TryParse(match.Groups["number"].Value, out var number) && number < int.MaxValue)
             prefix += (number + 1) + match.Groups["delimiter"].Value + " ";

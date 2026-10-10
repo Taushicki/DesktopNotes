@@ -236,6 +236,52 @@ public sealed class InlineMarkdownEditorTests
         finally { host.Close(); }
     });
 
+    [Theory]
+    [InlineData("- item", "\n")]
+    [InlineData("- [ ] task", "\r\n")]
+    [InlineData("2. item", "\n")]
+    [InlineData("  - nested", "\n")]
+    public Task ListContinuationCaretIsIndentedBeforeTyping(string item, string newline) => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = item + (newline == "\r\n" ? "\r\n" + item : "") };
+        var host = Host(editor);
+        try
+        {
+            host.Show(); editor.Select(editor.Text.Length, 0);
+            editor.HandleShortcut(Key.Enter, ModifierKeys.Shift); host.UpdateLayout();
+            double CaretX() => editor.TextArea.TextView.GetVisualPosition(editor.TextArea.Caret.Position, VisualYPosition.LineTop).X;
+            var before = CaretX(); Assert.True(before >= 16, $"Caret X: {before}");
+            editor.Document.Insert(editor.CaretOffset, "x"); host.UpdateLayout();
+            // Compare the start of the typed continuation with the empty-line caret.
+            editor.Select(editor.Text.Length - 1, 0); host.UpdateLayout();
+            Assert.Equal(before, CaretX(), 1);
+        }
+        finally { host.Close(); }
+    });
+
+    [Theory]
+    [InlineData("- item", "\n")]
+    [InlineData("- [ ] task", "\r\n")]
+    [InlineData("2. item", "\n")]
+    public Task DoubleEnterLeavesListWithoutIndentingNewText(string item, string newline) => OnSta(() =>
+    {
+        var original = item + (newline == "\r\n" ? "\r\n" + item : "");
+        using var editor = new LiveMarkdownEditor { Text = original };
+        var host = Host(editor);
+        try
+        {
+            host.Show(); editor.Select(editor.Text.Length, 0);
+            editor.HandleShortcut(Key.Enter, ModifierKeys.None);
+            editor.HandleShortcut(Key.Enter, ModifierKeys.None); host.UpdateLayout();
+            Assert.Equal(original + newline + newline, editor.Text);
+            editor.Document.Insert(editor.CaretOffset, "plain text"); host.UpdateLayout();
+            var offset = editor.Text.LastIndexOf("plain text", StringComparison.Ordinal);
+            Assert.DoesNotContain(editor.Layout.Decorations, part => part.Start == offset && part.Kind == InlineMarkdownLayout.DecorationKind.Indent);
+            editor.Undo(); editor.Undo(); Assert.EndsWith(newline + (item.StartsWith("2.") ? "3. " : item.StartsWith("- [") ? "- [ ] " : "- "), editor.Text);
+        }
+        finally { host.Close(); }
+    });
+
     private static Window Host(object content) => new() { Content = content, Left = -10000, Top = -10000, Width = 320, Height = 500, ShowActivated = false, ShowInTaskbar = false };
     private static string Geometry(TextEditor editor) => string.Join(";", editor.TextArea.TextView.VisualLines.Select(line =>
         $"{line.StartOffset}:{line.VisualTop:R}:{line.Height:R}:" + string.Join(",", line.TextLines.Select(text => $"{text.WidthIncludingTrailingWhitespace:R}/{text.Height:R}"))));

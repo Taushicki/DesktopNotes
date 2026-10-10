@@ -29,11 +29,13 @@ internal sealed class InlineMarkdownLayout
         var layout = new InlineMarkdownLayout();
         layout.VisitBlocks(document, source);
         var offset = 0;
+        int? previousContentOffset = null;
         foreach (var line in source.Split('\n'))
         {
             var text = line.TrimEnd('\r');
             if (!layout._code.Concat(layout._tables).Any(range => offset >= range.Start && offset <= range.End))
-                layout.DecorateLine(text, offset);
+                layout.DecorateLine(text, offset, previousContentOffset);
+            previousContentOffset = string.IsNullOrWhiteSpace(text) ? null : offset;
             offset += line.Length + 1;
         }
         layout.Decorations.Sort((a, b) => a.Start.CompareTo(b.Start));
@@ -95,7 +97,7 @@ internal sealed class InlineMarkdownLayout
     }
 
     private static readonly Regex ListPrefix = new(@"^(?<indent>[ \t]*)(?<marker>[-+*]|\d+[.)]) (?:(?<task>\[[ xX]\]) )?", RegexOptions.Compiled);
-    private void DecorateLine(string text, int offset)
+    private void DecorateLine(string text, int offset, int? previousContentOffset)
     {
         if (Styles.Any(range => range.HeadingLevel > 0 && range.Start <= offset && range.Start + range.Length >= offset + text.Length) &&
             Decorations.Any(part => part.Kind == DecorationKind.Hidden && part.Start == offset && part.Length >= text.Length)) return;
@@ -121,7 +123,14 @@ internal sealed class InlineMarkdownLayout
         if (Regex.IsMatch(text, @"^ {0,3}(?:-{3,}|\*{3,}|_{3,}) *$"))
         { Decorations.Add(new(offset, text.Length, DecorationKind.Rule)); return; }
         var parent = _items.Where(item => offset > item.Start && offset <= item.End).OrderByDescending(item => item.Start).FirstOrDefault();
-        if (parent.Indent > 0 && text.Length > 0)
+        // Markdig excludes the trailing empty line from a list item's span.
+        // Render its continuation indent before the first character is typed.
+        if (string.IsNullOrWhiteSpace(text))
+            parent = previousContentOffset is int previous
+                ? _items.Where(item => previous >= item.Start && previous <= item.End)
+                    .OrderByDescending(item => item.Start).FirstOrDefault()
+                : default;
+        if (parent.Indent > 0)
         {
             var spaces = text.Length - text.TrimStart(' ', '\t').Length;
             Decorations.Add(new(offset, spaces, DecorationKind.Indent, Indent: parent.Indent));
