@@ -45,24 +45,24 @@ public sealed class WindowsInteractionTests
     public Task ToolbarBoldPreservesSelectionAndUndoWithoutChangingWholeNoteStyle() => OnStaThread(() =>
     {
         var notes = new NoteService(new Repository()); var note = notes.Create(100, 100);
-        using var vm = new NoteViewModel(note, notes, () => { }, () => { }); vm.Markdown = "before word after";
+        using var vm = new NoteViewModel(note, notes, () => { }, () => { }); vm.Markdown = "# Заголовок\n\nbefore word after";
         var host = new NoteWindow(vm, new Layers());
         try
         {
             var editor = host.MarkdownEditor;
             editor.ApplyTemplate(); editor.Measure(new Size(280, 200)); editor.Arrange(new Rect(0, 0, 280, 200));
-            Assert.Equal("before word after", editor.Text);
-            editor.Select(7, 4);
+            Assert.Equal("# Заголовок\n\nbefore word after", editor.Text);
+            editor.Select(editor.Text.IndexOf("word", StringComparison.Ordinal), 4);
             var row = Assert.IsType<StackPanel>(Assert.IsType<Border>(host.FormattingToolbar.Content).Child);
             var button = Assert.IsType<Button>(row.Children[2]);
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Assert.Equal("before **word** after", notes.Get(note.Id).Markdown);
+            Assert.Equal("# Заголовок\n\nbefore **word** after", notes.Get(note.Id).Markdown);
             Assert.False(notes.Get(note.Id).IsBold); Assert.Equal("**word**", editor.SelectedText);
             editor.Undo();
-            Assert.Equal("before word after", notes.Get(note.Id).Markdown);
-            editor.Select(7, 4); button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal("# Заголовок\n\nbefore word after", notes.Get(note.Id).Markdown);
+            editor.Select(editor.Text.IndexOf("word", StringComparison.Ordinal), 4); button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Assert.Equal("before word after", notes.Get(note.Id).Markdown);
+            Assert.Equal("# Заголовок\n\nbefore word after", notes.Get(note.Id).Markdown);
             Assert.Equal("word", editor.SelectedText);
             editor.Select(0, 0); button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             Assert.True(notes.Get(note.Id).IsBold);

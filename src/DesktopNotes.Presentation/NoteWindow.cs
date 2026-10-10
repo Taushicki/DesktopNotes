@@ -106,6 +106,8 @@ public sealed class NoteWindow : Window
         root.Children.Add(header);
 
         _editor = new LiveMarkdownEditor() { Text = vm.Markdown, ContextMenu = ContextMenu };
+        _editor.EnableNoteTitle();
+        if (_editor.Text != vm.Markdown) vm.Markdown = _editor.Text;
         _editor.TextChanged += (_, _) => { if (_editor.Text != _vm.Markdown) _vm.Markdown = _editor.Text; };
         _editor.OpenNoteRequested += destination => OpenNoteLink?.Invoke(destination);
         _editor.OpenWebLinkRequested += uri =>
@@ -282,7 +284,7 @@ public sealed class NoteWindow : Window
     { NoteTextAlignment.Center => TextAlignment.Center, NoteTextAlignment.Right => TextAlignment.Right,
         NoteTextAlignment.Justify => TextAlignment.Justify, _ => TextAlignment.Left };
     private static VerticalAlignment VerticalAlignmentFor(NoteVerticalAlignment alignment) => alignment switch
-    { NoteVerticalAlignment.Center => VerticalAlignment.Center, NoteVerticalAlignment.Bottom => VerticalAlignment.Bottom, _ => VerticalAlignment.Top };
+    { NoteVerticalAlignment.Center => VerticalAlignment.Center, NoteVerticalAlignment.Bottom => VerticalAlignment.Bottom, _ => VerticalAlignment.Stretch };
 
     internal static void ApplyDocumentFormatting(System.Windows.Documents.FlowDocument document, Note note)
     {
@@ -305,6 +307,12 @@ public sealed class NoteWindow : Window
 
     private void UpdateEditorHeight()
     {
+        // Use the full viewport instead of clipping new lines to the previous extent.
+        if (_vm.VerticalAlignment == NoteVerticalAlignment.Top)
+        {
+            _editor.Height = double.NaN;
+            return;
+        }
         if (_body.ActualHeight <= 0 || _editor.ExtentHeight <= 0) return;
         var height = Math.Max(1, Math.Min(_body.ActualHeight, _editor.ExtentHeight + _editor.Padding.Top + _editor.Padding.Bottom));
         if (double.IsNaN(_editor.Height) || Math.Abs(_editor.Height - height) > 0.5) _editor.Height = height;

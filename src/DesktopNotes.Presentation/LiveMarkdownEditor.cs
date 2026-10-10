@@ -24,6 +24,8 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     internal InlineMarkdownLayout Layout { get; private set; } = new();
     private bool _disposed;
     private bool _previewDisabled;
+    private bool _noteTitle;
+    private bool _normalizingTitle;
     internal sealed record PreviewBlock(int Start, int Length, bool IsCode = false, bool IsTable = false);
     internal IReadOnlyList<PreviewBlock> PreviewBlocks => _blocks;
     internal event Action<string>? OpenNoteRequested;
@@ -61,7 +63,33 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 
     private void OnTextChanged(object? sender, EventArgs args)
     {
+        NormalizeTitle();
         RefreshPreview();
+    }
+    internal void EnableNoteTitle()
+    {
+        _noteTitle = true;
+        NormalizeTitle();
+        RefreshPreview();
+    }
+
+    private void NormalizeTitle()
+    {
+        if (!_noteTitle || _normalizingTitle || Text.StartsWith("# ", StringComparison.Ordinal)) return;
+        var firstLine = Document.GetText(Document.GetLineByNumber(1));
+        var prefix = Regex.Match(firstLine, @"^ {0,3}#{1,6}(?=[ \t]|$)[ \t]*");
+        var length = prefix.Success ? prefix.Length : 0;
+        var start = SelectionStart; var end = start + SelectionLength;
+        int Map(int offset) => offset < length ? 2 : offset + 2 - length;
+        _normalizingTitle = true;
+        try
+        {
+            // TextChanged runs inside the document's update/undo group, so restoring
+            // the structural title marker remains part of the original edit.
+            Document.Replace(0, length, "# ");
+            Select(Map(start), Math.Max(0, Map(end) - Map(start)));
+        }
+        finally { _normalizingTitle = false; }
     }
     private void RefreshPreview()
     {
@@ -206,7 +234,11 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             if (marker is not null)
             {
                 if (key == Key.Home && CaretOffset != marker.Start + marker.Length) { Select(marker.Start + marker.Length, 0); return true; }
-                if (key == Key.Back && CaretOffset == marker.Start + marker.Length) { ApplyEdit(new(marker.Start, marker.Length, "", 0, 0)); return true; }
+                if (key == Key.Back && CaretOffset == marker.Start + marker.Length)
+                {
+                    if (!_noteTitle || line.LineNumber != 1) ApplyEdit(new(marker.Start, marker.Length, "", 0, 0));
+                    return true;
+                }
             }
         }
         if (modifiers == ModifierKeys.Control)
@@ -398,7 +430,8 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             {
                 if (part.Kind != InlineMarkdownLayout.DecorationKind.Task) return;
                 editor.ToggleTask(part);
-            }, cell => InlineMarkdownMetrics.Measure(editor, cell), column => InlineMarkdownMetrics.MeasureColumn(editor, column));
+            }, cell => InlineMarkdownMetrics.Measure(editor, cell), column => InlineMarkdownMetrics.MeasureColumn(editor, column),
+                editor._noteTitle && part.Start == 0 && part.Kind == InlineMarkdownLayout.DecorationKind.Hidden ? 6 : 0);
         }
     }
 

@@ -105,6 +105,66 @@ public sealed class NoteTitleTests
         finally { window.ClosePermanently(); }
     });
 
+    [Fact]
+    public Task ErasingTitleKeepsH1AndSingleStepUndo() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = "# Старое имя\n\nСодержимое" };
+        editor.EnableNoteTitle(); editor.Document.UndoStack.ClearAll();
+        editor.Document.Remove(0, "# Старое имя".Length);
+        Assert.Equal("# \n\nСодержимое", editor.Text);
+        editor.Document.Insert(2, "Новое имя");
+        Assert.Equal("Новое имя", MarkdownNoteTitle.Read(editor.Text));
+        Assert.Contains(editor.Layout.Styles, style => style.Start == 0 && style.HeadingLevel == 1);
+        editor.Undo(); Assert.Equal("# \n\nСодержимое", editor.Text);
+        editor.Undo(); Assert.Equal("# Старое имя\n\nСодержимое", editor.Text);
+        editor.Redo(); Assert.Equal("# \n\nСодержимое", editor.Text);
+        editor.Select(2, 0);
+        Assert.True(editor.HandleShortcut(System.Windows.Input.Key.Back, System.Windows.Input.ModifierKeys.None));
+        Assert.StartsWith("# ", editor.Text);
+        editor.SetHeading(3); Assert.StartsWith("# ", editor.Text);
+        editor.Select(0, editor.Document.TextLength);
+        editor.TextArea.Selection.ReplaceSelectionWithText(""); Assert.Equal("# ", editor.Text);
+        editor.TextArea.PerformTextInput("Название");
+        Assert.Equal("# Название", editor.Text);
+        Assert.Equal(editor.Text.Length, editor.CaretOffset);
+    });
+
+    [Fact]
+    public Task EnterBeforeWordKeepsFollowingLineVisibleAndTitleSpacingStable() => OnSta(() =>
+    {
+        var service = new NoteService(new Repository()); var note = service.Create(0, 0);
+        service.Update(note with { Markdown = "# Заголовок\nСлово" });
+        using var vm = new NoteViewModel(service.Get(note.Id), service, () => { }, () => { });
+        var window = new NoteWindow(vm, new Layers()) { Left = -10000, Top = -10000, ShowActivated = false };
+        try
+        {
+            window.Show(); window.UpdateLayout(); var editor = window.MarkdownEditor;
+            Assert.True(double.IsNaN(editor.Height));
+            var headingHeight = editor.TextArea.TextView.VisualLines.First().Height;
+            using var plain = new LiveMarkdownEditor { Text = editor.Text };
+            var comparison = new Window { Content = plain, Width = 320, Height = 280, Left = -10000, Top = -10000, ShowActivated = false };
+            try
+            {
+                comparison.Show(); comparison.UpdateLayout();
+                Assert.InRange(headingHeight - plain.TextArea.TextView.VisualLines.First().Height, 5.9, 6.1);
+            }
+            finally { comparison.Close(); }
+            editor.Select(editor.Text.IndexOf("Слово", StringComparison.Ordinal), 0);
+            Assert.True(editor.HandleShortcut(System.Windows.Input.Key.Enter, System.Windows.Input.ModifierKeys.None));
+            window.UpdateLayout();
+            Assert.Equal("# Заголовок\n\nСлово", editor.Text);
+            var view = editor.TextArea.TextView;
+            Assert.Contains(view.VisualLines, line => line.FirstDocumentLine.LineNumber == 3 && line.TextLines.Any(text => text.Length >= 5));
+            var wordLine = view.VisualLines.Single(line => line.FirstDocumentLine.LineNumber == 3);
+            Assert.True(wordLine.VisualTop + wordLine.Height <= view.ActualHeight);
+            editor.Select(2, 0); window.UpdateLayout();
+            Assert.Equal(headingHeight, view.VisualLines.First().Height);
+            Assert.Contains(view.VisualLines, line => line.FirstDocumentLine.LineNumber == 3);
+            editor.Undo(); window.UpdateLayout(); Assert.Equal("# Заголовок\nСлово", editor.Text);
+        }
+        finally { window.ClosePermanently(); }
+    });
+
     private static Task OnSta(Action action)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
