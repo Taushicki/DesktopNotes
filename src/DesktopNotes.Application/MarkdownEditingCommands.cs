@@ -84,16 +84,18 @@ public static class MarkdownEditingCommands
         return new(start, length, marker + selected + marker, marker.Length, length);
     }
 
-    public static MarkdownTextEdit ContinueLine(string text, int caret)
+    public static MarkdownTextEdit ContinueLine(string text, int caret, string? listItemPrefix = null)
     {
         var start = caret == 0 ? 0 : text.LastIndexOf('\n', caret - 1) + 1;
         var current = text[start..caret];
         var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
         var match = Regex.Match(current, @"^([ \t]*)(?:(?<bullet>[-+*])|(?<number>\d+)(?<delimiter>[.)])|(?<quote>>)) (?<task>\[[ xX]\] )?");
+        var isContinuation = !match.Success && listItemPrefix is not null;
+        if (isContinuation) match = Regex.Match(listItemPrefix!, @"^([ \t]*)(?:(?<bullet>[-+*])|(?<number>\d+)(?<delimiter>[.)])) (?<task>\[[ xX]\] )?");
         if (!match.Success) return new(caret, 0, newline, newline.Length, 0);
         var lineEnd = text.IndexOf('\n', caret); if (lineEnd < 0) lineEnd = text.Length;
         if (lineEnd > start && text[lineEnd - 1] == '\r') lineEnd--;
-        if (string.IsNullOrWhiteSpace(text[(start + match.Length)..lineEnd]))
+        if (!isContinuation && string.IsNullOrWhiteSpace(text[(start + match.Length)..lineEnd]))
         {
             return new(start, lineEnd - start, "", 0, 0);
         }

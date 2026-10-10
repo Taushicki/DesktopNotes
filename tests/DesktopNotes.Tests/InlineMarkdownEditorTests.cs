@@ -318,6 +318,40 @@ public sealed class InlineMarkdownEditorTests
             Assert.Contains(reloaded.Layout.Decorations, part => part.Start == offset && part.Kind == InlineMarkdownLayout.DecorationKind.Indent);
     });
 
+    [Theory]
+    [InlineData("- item", "- ", "\n")]
+    [InlineData("3. item", "4. ", "\r\n")]
+    [InlineData("3) item", "4) ", "\n")]
+    [InlineData("- [x] task", "- [ ] ", "\n")]
+    [InlineData("- outer\n  + nested", "  + ", "\n")]
+    public Task EnterAfterShiftEnterCreatesNextItem(string source, string nextMarker, string newline) => OnSta(() =>
+    {
+        if (newline == "\r\n") source = "intro\r\n\r\n" + source;
+        using var editor = new LiveMarkdownEditor { Text = source };
+        var host = Host(editor);
+        try
+        {
+            host.Show(); editor.Select(editor.Text.Length, 0);
+            editor.HandleShortcut(Key.Enter, ModifierKeys.Shift); host.UpdateLayout();
+            var emptyContinuation = editor.Text;
+            editor.HandleShortcut(Key.Enter, ModifierKeys.None); host.UpdateLayout();
+            Assert.Equal(emptyContinuation + newline + nextMarker, editor.Text);
+            editor.Undo(); Assert.Equal(emptyContinuation, editor.Text);
+            editor.Document.Insert(editor.CaretOffset, "continued");
+            editor.Select(editor.Text.Length, 0);
+            var filledContinuation = editor.Text;
+            editor.HandleShortcut(Key.Enter, ModifierKeys.None); host.UpdateLayout();
+            Assert.Equal(filledContinuation + newline + nextMarker, editor.Text);
+            Assert.Equal(editor.Text.Length, editor.CaretOffset);
+            editor.HandleShortcut(Key.Enter, ModifierKeys.None);
+            Assert.Equal(filledContinuation + newline, editor.Text);
+            editor.Document.Insert(editor.CaretOffset, "plain"); host.UpdateLayout();
+            var plain = editor.Text.LastIndexOf("plain", StringComparison.Ordinal);
+            Assert.DoesNotContain(editor.Layout.Decorations, part => part.Start == plain && part.Kind == InlineMarkdownLayout.DecorationKind.Indent);
+        }
+        finally { host.Close(); }
+    });
+
     private static Window Host(object content) => new() { Content = content, Left = -10000, Top = -10000, Width = 320, Height = 500, ShowActivated = false, ShowInTaskbar = false };
     private static string Geometry(TextEditor editor) => string.Join(";", editor.TextArea.TextView.VisualLines.Select(line =>
         $"{line.StartOffset}:{line.VisualTop:R}:{line.Height:R}:" + string.Join(",", line.TextLines.Select(text => $"{text.WidthIncludingTrailingWhitespace:R}/{text.Height:R}"))));

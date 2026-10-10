@@ -150,6 +150,15 @@ internal sealed class InlineMarkdownLayout
         return "";
     }
 
+    internal string? ParentListItemPrefix(string source, int offset)
+    {
+        var start = offset == 0 ? 0 : source.LastIndexOf('\n', offset - 1) + 1;
+        if (!Decorations.Any(part => part.Start == start && part.Kind == DecorationKind.Indent)) return null;
+        var parent = _items.Where(item => item.Start < start).OrderByDescending(item => item.Start).FirstOrDefault();
+        if (parent.ContentIndent == 0) return null;
+        return source.Substring(parent.Start, parent.ContentIndent);
+    }
+
     private void Hide(int start, int length)
     {
         if (length > 0) Decorations.Add(new(start, length, DecorationKind.Hidden));

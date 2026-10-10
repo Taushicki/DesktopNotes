@@ -391,7 +391,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         if (key == Key.Enter && modifiers == ModifierKeys.None && SelectionLength == 0 && TryCreateFencedCodeBlock()) return true;
         if (key == Key.Enter && modifiers == ModifierKeys.None && SelectionLength == 0 &&
             !_blocks.Any(block => block.IsCode && CaretOffset >= block.Start && CaretOffset <= block.Start + block.Length))
-        { ApplyEdit(MarkdownEditingCommands.ContinueLine(Text, CaretOffset)); return true; }
+        { ApplyEdit(MarkdownEditingCommands.ContinueLine(Text, CaretOffset, Layout.ParentListItemPrefix(Text, CaretOffset))); return true; }
         if (key == Key.Tab && modifiers is ModifierKeys.None or ModifierKeys.Shift)
         {
             if (!MoveTableCell(modifiers == ModifierKeys.Shift))
