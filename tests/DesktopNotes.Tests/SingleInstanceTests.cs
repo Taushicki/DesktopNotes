@@ -6,6 +6,19 @@ namespace DesktopNotes.Tests;
 public sealed class SingleInstanceTests
 {
     [Fact]
+    public void ProductionInstanceHoldsInstallerGuardForItsLifetime()
+    {
+        using (var instance = new SingleInstance())
+        {
+            Assert.True(instance.IsPrimary);
+            Assert.True(Mutex.TryOpenExisting(SingleInstance.InstallationMutexName, out var guard));
+            guard!.Dispose();
+        }
+        Assert.False(Mutex.TryOpenExisting(SingleInstance.InstallationMutexName, out var remaining));
+        remaining?.Dispose();
+    }
+
+    [Fact]
     public async Task SecondaryForwardsCreateCommandToPrimary()
     {
         var name = "DesktopNotes-test-" + Guid.NewGuid().ToString("N");

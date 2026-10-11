@@ -6,7 +6,9 @@ namespace DesktopNotes.Infrastructure;
 
 public sealed class SingleInstance : IDisposable
 {
+    public const string InstallationMutexName = @"Local\DesktopNotes.Installation";
     private readonly Mutex _mutex;
+    private readonly Mutex? _installationMutex;
     private readonly string _pipeName;
     private readonly CancellationTokenSource _shutdown = new();
     private Task? _listener;
@@ -19,6 +21,8 @@ public sealed class SingleInstance : IDisposable
         // No thread-affine mutex ownership: retaining the named handle defines the primary lifetime.
         _mutex = new Mutex(false, "Global\\" + _pipeName, out var created);
         IsPrimary = created;
+        if (IsPrimary && instanceName is null)
+            _installationMutex = new Mutex(false, InstallationMutexName);
     }
 
     public async Task SendAsync(string command, CancellationToken cancellationToken = default)
@@ -64,5 +68,5 @@ public sealed class SingleInstance : IDisposable
         }
     }
 
-    public void Dispose() { _shutdown.Cancel(); _mutex.Dispose(); }
+    public void Dispose() { _shutdown.Cancel(); _installationMutex?.Dispose(); _mutex.Dispose(); }
 }
