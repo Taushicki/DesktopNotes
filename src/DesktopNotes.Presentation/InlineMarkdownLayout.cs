@@ -14,7 +14,7 @@ internal sealed class InlineMarkdownLayout
     internal sealed record Decoration(int Start, int Length, DecorationKind Kind, string Label = "", double Indent = 0,
         Cell? Cell = null, IReadOnlyList<Cell>? Column = null, IReadOnlyList<IReadOnlyList<Cell>>? Columns = null);
     [Flags]
-    internal enum Style { None = 0, Bold = 1, Italic = 2, Code = 4, Strike = 8, Highlight = 16, Link = 32, BlockCode = 64 }
+    internal enum Style { None = 0, Bold = 1, Italic = 2, Code = 4, Strike = 8, Highlight = 16, Link = 32, BlockCode = 64, Underline = 128 }
     internal sealed record StyledRange(int Start, int Length, Style Style, double Scale = 1, int HeadingLevel = 0);
     internal List<Decoration> Decorations { get; } = [];
     internal List<StyledRange> Styles { get; } = [];
@@ -261,7 +261,7 @@ internal sealed class InlineMarkdownLayout
                     var count = emphasis.DelimiterCount;
                     Hide(start, count); Hide(start + length - count, count);
                     var style = emphasis.DelimiterChar switch
-                    { '~' => Style.Strike, '=' => Style.Highlight, _ => count >= 2 ? Style.Bold | (count == 3 ? Style.Italic : Style.None) : Style.Italic };
+                    { '~' => Style.Strike, '=' => Style.Highlight, '+' => Style.Underline, _ => count >= 2 ? Style.Bold | (count == 3 ? Style.Italic : Style.None) : Style.Italic };
                     Styles.Add(new(start, length, style));
                     VisitInlines(emphasis, source);
                     break;

@@ -10,7 +10,7 @@ public sealed record MarkdownTextEdit(int Start, int Length, string Replacement,
 public static class MarkdownFormatting
 {
     [Flags]
-    private enum Format { None = 0, Bold = 1, Italic = 2, Strike = 4, Highlight = 8, Code = 16 }
+    private enum Format { None = 0, Bold = 1, Italic = 2, Strike = 4, Highlight = 8, Code = 16, Underline = 32 }
     private sealed record Wrapper(int Start, int End, int Open, int Close, Format Format);
     private static readonly MarkdownPipeline Pipeline = new MarkdownPipelineBuilder().UseEmphasisExtras().UsePreciseSourceLocation().DisableHtml().Build();
     private const string Paragraphs = @"(\r?\n[ \t]*\r?\n(?:[ \t]*\r?\n)*)";
@@ -20,7 +20,7 @@ public static class MarkdownFormatting
     public static MarkdownTextEdit ToggleInline(string text, int start, int length, string marker)
     {
         if (start < 0 || length <= 0 || start > text.Length - length) throw new ArgumentOutOfRangeException(nameof(start));
-        var requested = marker switch { "**" => Format.Bold, "*" => Format.Italic, "~~" => Format.Strike, "==" => Format.Highlight, "`" => Format.Code, _ => throw new ArgumentException("Unsupported inline marker.", nameof(marker)) };
+        var requested = marker switch { "**" => Format.Bold, "*" => Format.Italic, "~~" => Format.Strike, "==" => Format.Highlight, "`" => Format.Code, "++" => Format.Underline, _ => throw new ArgumentException("Unsupported inline marker.", nameof(marker)) };
         var end = start + length;
         var wrappers = Wrappers(text);
         // Selection normally contains visible text only. Include its exact Markdown
@@ -118,7 +118,7 @@ public static class MarkdownFormatting
             var pad = core.StartsWith('`') || core.EndsWith('`') ? " " : "";
             prefix = ticks + pad; suffix = pad + ticks;
         }
-        foreach (var (flag, marker) in new[] { (Format.Italic, "*"), (Format.Bold, "**"), (Format.Strike, "~~"), (Format.Highlight, "==") })
+        foreach (var (flag, marker) in new[] { (Format.Italic, "*"), (Format.Bold, "**"), (Format.Underline, "++"), (Format.Strike, "~~"), (Format.Highlight, "==") })
             if (formats.HasFlag(flag)) { prefix = marker + prefix; suffix += marker; }
         foreach (var link in links.AsEnumerable().Reverse()) { prefix = link.Open + prefix; suffix += link.Close; }
         return (prefix + core + suffix, prefix.Length);
@@ -136,7 +136,7 @@ public static class MarkdownFormatting
                 if (inline is EmphasisInline emphasis)
                 {
                     var format = emphasis.DelimiterChar switch
-                    { '*' or '_' => emphasis.DelimiterCount == 2 ? Format.Bold : Format.Italic, '~' => Format.Strike, '=' => Format.Highlight, _ => Format.None };
+                    { '*' or '_' => emphasis.DelimiterCount == 2 ? Format.Bold : Format.Italic, '~' => Format.Strike, '=' => Format.Highlight, '+' => Format.Underline, _ => Format.None };
                     if (format != Format.None) result.Add(new(start, end, emphasis.DelimiterCount, emphasis.DelimiterCount, format));
                 }
                 else if (inline is CodeInline)

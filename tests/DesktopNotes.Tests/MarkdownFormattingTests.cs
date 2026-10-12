@@ -39,7 +39,7 @@ public sealed class MarkdownFormattingTests
     {
         static IEnumerable<string[]> Orders(string[] markers) => markers.Length == 0 ? new[] { Array.Empty<string>() } :
             markers.SelectMany((marker, index) => Orders(markers.Where((_, i) => i != index).ToArray()).Select(rest => new[] { marker }.Concat(rest).ToArray()));
-        foreach (var order in Orders(["**", "*", "~~", "==", "`"]))
+        foreach (var order in Orders(["**", "*", "~~", "==", "`", "++"]))
         {
             var text = "before word after"; var start = 7; var length = 4;
             foreach (var marker in order)
@@ -49,7 +49,7 @@ public sealed class MarkdownFormattingTests
                 start = edit.Start + edit.SelectionStart; length = edit.SelectionLength;
                 Assert.Contains("word", text.Substring(start, length));
             }
-            Assert.Equal("before ==~~***`word`***~~== after", text);
+            Assert.Equal("before ==~~++***`word`***++~~== after", text);
             foreach (var marker in order)
             {
                 var edit = MarkdownEditingCommands.ToggleInline(text, start, length, marker);

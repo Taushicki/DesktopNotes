@@ -53,6 +53,7 @@ public sealed class UiText : INotifyPropertyChanged
         ["Жирный — Ctrl+B"] = "Bold — Ctrl+B",
         ["Курсив — Ctrl+I"] = "Italic — Ctrl+I",
         ["Код — Ctrl+`"] = "Code — Ctrl+`",
+        ["Подчёркнутый — Ctrl+U"] = "Underline — Ctrl+U",
         ["Блок кода"] = "Code block",
         ["Зачёркнутый"] = "Strikethrough",
         ["Выделить маркером"] = "Highlight",

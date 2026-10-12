@@ -60,6 +60,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         _generator = new InlineGenerator(this); TextArea.TextView.ElementGenerators.Add(_generator);
         TextArea.TextView.LineTransformers.Add(new InlineStyling(this));
         TextArea.TextView.BackgroundRenderers.Add(new CodeBlockBackground(this));
+        TextArea.TextView.BackgroundRenderers.Add(new InlineBackground(this));
         TextChanged += OnTextChanged;
         Loaded += OnEditorLoaded;
         SizeChanged += (_, _) => TextArea.TextView.Redraw();
@@ -378,7 +379,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         }
         if (modifiers == ModifierKeys.Control)
         {
-            var marker = key switch { Key.B => "**", Key.I => "*", Key.Oem3 => "`", _ => null };
+            var marker = key switch { Key.B => "**", Key.I => "*", Key.U => "++", Key.Oem3 => "`", _ => null };
             if (marker is not null) { ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, marker)); return true; }
             if (key == Key.K)
             {
@@ -537,6 +538,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         }
         Add(UiText.Get("Жирный — Ctrl+B"), ToggleBoldSelection);
         Add(UiText.Get("Курсив — Ctrl+I"), () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "*")));
+        Add(UiText.Get("Подчёркнутый — Ctrl+U"), () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "++")));
         Add(UiText.Get("Код — Ctrl+`"), () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "`")));
         Add(UiText.Get("Блок кода"), InsertCodeBlock);
         Add(UiText.Get("Зачёркнутый"), () => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "~~")));
@@ -686,10 +688,9 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
                         style.HasFlag(InlineMarkdownLayout.Style.Bold) ? FontWeights.Bold : face.Weight, face.Stretch));
                     if (range.Scale != 1) element.TextRunProperties.SetFontRenderingEmSize(editor.FontSize * range.Scale);
                     if (style.HasFlag(InlineMarkdownLayout.Style.Strike)) element.TextRunProperties.SetTextDecorations(MergeDecorations(element.TextRunProperties.TextDecorations, TextDecorations.Strikethrough));
-                    if (style.HasFlag(InlineMarkdownLayout.Style.Highlight)) element.TextRunProperties.SetBackgroundBrush(editor.Theme.Highlight);
+                    if (style.HasFlag(InlineMarkdownLayout.Style.Underline)) element.TextRunProperties.SetTextDecorations(MergeDecorations(element.TextRunProperties.TextDecorations, TextDecorations.Underline));
                     if (style.HasFlag(InlineMarkdownLayout.Style.BlockCode))
                         element.TextRunProperties.SetTypeface(new Typeface(new FontFamily("Consolas"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal));
-                    else if (style.HasFlag(InlineMarkdownLayout.Style.Code) && element.TextRunProperties.BackgroundBrush is null) element.TextRunProperties.SetBackgroundBrush(editor.Theme.InlineCode);
                     if (style.HasFlag(InlineMarkdownLayout.Style.Link))
                     { element.TextRunProperties.SetForegroundBrush(editor.Theme.Link); element.TextRunProperties.SetTextDecorations(MergeDecorations(element.TextRunProperties.TextDecorations, TextDecorations.Underline)); }
                 });

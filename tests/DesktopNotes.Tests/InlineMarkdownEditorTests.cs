@@ -369,7 +369,7 @@ public sealed class InlineMarkdownEditorTests
             Assert.Equal(FontWeights.Bold, properties.Typeface.Weight);
             Assert.Equal(FontStyles.Italic, properties.Typeface.Style);
             Assert.Equal("Consolas", properties.Typeface.FontFamily.Source);
-            Assert.Same(editor.Theme.Highlight, properties.BackgroundBrush);
+            Assert.Null(properties.BackgroundBrush); // Fills render below the selection layer.
             Assert.Same(editor.Theme.Link, properties.ForegroundBrush);
             Assert.Contains(properties.TextDecorations, decoration => decoration.Location == TextDecorationLocation.Strikethrough);
             Assert.Contains(properties.TextDecorations, decoration => decoration.Location == TextDecorationLocation.Underline);

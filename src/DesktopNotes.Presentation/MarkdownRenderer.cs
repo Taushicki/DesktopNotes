@@ -107,6 +107,7 @@ public sealed class MarkdownRenderer : IMarkdownRenderer
                 case EmphasisInline emphasis:
                     Span span = emphasis.DelimiterCount == 2 ? new Bold() : new Italic();
                     if (emphasis.DelimiterChar == '~') { span = new Span { TextDecorations = TextDecorations.Strikethrough }; }
+                    if (emphasis.DelimiterChar == '+') { span = new Span { TextDecorations = TextDecorations.Underline }; }
                     if (emphasis.DelimiterChar == '=') { span = new Span { Background = Brushes.LightGoldenrodYellow }; }
                     AddInlines(span.Inlines, emphasis, actions);
                     target.Add(span);
