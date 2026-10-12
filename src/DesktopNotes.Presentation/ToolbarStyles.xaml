@@ -30,4 +30,13 @@
             </Setter.Value>
         </Setter>
     </Style>
+    <Style x:Key="ConnectionPortButton" TargetType="Button">
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+            <Border Background="Transparent" CornerRadius="14">
+                <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+        </ControlTemplate></Setter.Value></Setter>
+    </Style>
 </ResourceDictionary>

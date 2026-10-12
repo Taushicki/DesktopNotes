@@ -761,6 +761,53 @@ public sealed class WindowsInteractionTests
         finally { host.ClosePermanently(); }
     });
 
+
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(1.25, false)]
+    [InlineData(1.5, false)]
+    [InlineData(2, false)]
+    [InlineData(1, true)]
+    public void ConnectionMarkerAvoidsToolbarAndScreenEdge(double scale, bool nearTop)
+    {
+        var note = new NoteBounds(200, nearTop ? 60 : 300, 320 * scale, 280 * scale);
+        var panel = new NoteBounds(note.X + (note.Width - 228 * scale) / 2, note.Y - 53 * scale, 228 * scale, 48 * scale);
+        var area = new NoteBounds(0, 0, 1920, 1080);
+        static bool Overlaps(NoteBounds a, NoteBounds b) => a.X < b.Right && a.Right > b.X && a.Y < b.Bottom && a.Bottom > b.Y;
+        var top = EdgeLinkHandles.MarkerBounds(note, NoteSide.Top, scale, panel, area);
+        Assert.False(Overlaps(top, panel)); Assert.True(top.Bottom < note.Y);
+        Assert.True(top.Y >= area.Y);
+        panel = panel with { Y = note.Bottom + 5 * scale };
+        var bottom = EdgeLinkHandles.MarkerBounds(note, NoteSide.Bottom, scale, panel, area);
+        Assert.False(Overlaps(bottom, panel)); Assert.True(bottom.Y > note.Bottom);
+    }
+
+    [Fact]
+    public Task OwnedConnectionPortsAvoidToolbarAndUseTransparentButtonTemplate() => OnStaThread(() =>
+    {
+        var host = new Window { Left = -10000, Top = -10000, Width = 320, Height = 280, ShowActivated = false, ShowInTaskbar = false };
+        var toolbar = new Window { Left = -9954, Top = -10053, Width = 228, Height = 48, ShowActivated = false, ShowInTaskbar = false, WindowStyle = WindowStyle.None, ResizeMode = ResizeMode.NoResize };
+        EdgeLinkHandles? handles = null;
+        try
+        {
+            host.Show(); toolbar.Owner = host; toolbar.Show();
+            handles = new EdgeLinkHandles(host, _ => { }, () => { }, () => { }, () => { }, toolbar: () => toolbar);
+            handles.SetState(true, false);
+            var panel = NativeWindows.Rect(new System.Windows.Interop.WindowInteropHelper(toolbar).Handle);
+            foreach (var port in host.OwnedWindows.Cast<Window>().Where(window => window != toolbar))
+            {
+                var rect = NativeWindows.Rect(new System.Windows.Interop.WindowInteropHelper(port).Handle);
+                Assert.True(rect.Right <= panel.Left || rect.Left >= panel.Right || rect.Bottom <= panel.Top || rect.Top >= panel.Bottom);
+                var button = Assert.IsType<Button>(port.Content); button.ApplyTemplate(); port.UpdateLayout();
+                var surface = Assert.IsType<Border>(VisualTreeHelper.GetChild(button, 0));
+                Assert.Same(Brushes.Transparent, surface.Background);
+                Assert.Null(button.FocusVisualStyle);
+            }
+            Assert.Equal(4, handles.VisiblePortCount);
+        }
+        finally { handles?.Dispose(); toolbar.Close(); host.Close(); }
+    });
+
     private static Task OnStaThread(Action action)
     {
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

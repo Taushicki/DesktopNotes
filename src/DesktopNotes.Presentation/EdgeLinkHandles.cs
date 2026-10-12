@@ -16,6 +16,7 @@ internal sealed class EdgeLinkHandles : Grid, IDisposable
 {
     private sealed record Port(Window Window, Button Button, PortVisual Visual);
     private readonly Window _host;
+    private readonly Func<Window?>? _toolbar;
     private readonly DispatcherTimer _timer;
     private readonly Action<NoteSide> _begin;
     private readonly Action _update, _complete, _cancel;
@@ -28,9 +29,10 @@ internal sealed class EdgeLinkHandles : Grid, IDisposable
     internal bool IsDragging => _dragPort is not null;
     internal int VisiblePortCount => _ports.Values.Count(port => port.Window.IsVisible);
 
-    public EdgeLinkHandles(Window host, Action<NoteSide> begin, Action update, Action complete, Action cancel, Action? deactivated = null)
+    public EdgeLinkHandles(Window host, Action<NoteSide> begin, Action update, Action complete, Action cancel, Action? deactivated = null, Func<Window?>? toolbar = null)
     {
-        _host = host; _begin = begin; _update = update; _complete = complete; _cancel = cancel;
+        _host = host; _toolbar = toolbar; _begin = begin;
+        Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/DesktopNotes;component/ToolbarStyles.xaml", UriKind.Relative) }); _update = update; _complete = complete; _cancel = cancel;
         _deactivated = deactivated;
         _timer = new DispatcherTimer(DispatcherPriority.Render, host.Dispatcher) { Interval = TimeSpan.FromMilliseconds(50) };
         _timer.Tick += (_, _) => Refresh();
@@ -46,18 +48,35 @@ internal sealed class EdgeLinkHandles : Grid, IDisposable
         Refresh();
     }
 
-    internal static NoteBounds MarkerBounds(NoteBounds note, NoteSide side, double scale = 1)
+    internal static NoteBounds MarkerBounds(NoteBounds note, NoteSide side, double scale = 1, NoteBounds? reserved = null, NoteBounds? workArea = null)
     {
         var anchor = ArrowRouter.Anchor(note, side);
         var size = 28 * scale;
         var gap = 10 * scale;
-        return side switch
+        NoteBounds bounds = side switch
         {
             NoteSide.Left => new(note.X - gap - size, anchor.Y - size / 2, size, size),
             NoteSide.Top => new(anchor.X - size / 2, note.Y - gap - size, size, size),
             NoteSide.Right => new(note.Right + gap, anchor.Y - size / 2, size, size),
             _ => new(anchor.X - size / 2, note.Bottom + gap, size, size)
         };
+        if (reserved is not { } panel || bounds.X >= panel.Right || bounds.Right <= panel.X || bounds.Y >= panel.Bottom || bounds.Bottom <= panel.Y) return bounds;
+        var moved = side switch
+        {
+            NoteSide.Top => bounds with { Y = panel.Y - gap - size },
+            NoteSide.Bottom => bounds with { Y = panel.Bottom + gap },
+            NoteSide.Left => bounds with { X = panel.X - gap - size },
+            _ => bounds with { X = panel.Right + gap }
+        };
+        // Near a screen edge, keep the port reachable beside the toolbar rather
+        // than pushing it off screen. Its connection still starts at the note edge.
+        if (workArea is { } area && side is NoteSide.Top or NoteSide.Bottom && (moved.Y < area.Y || moved.Bottom > area.Bottom))
+        {
+            var left = panel.X - gap - size;
+            var right = panel.Right + gap;
+            moved = bounds with { X = left >= area.X ? left : Math.Min(right, area.Right - size) };
+        }
+        return moved;
     }
 
     internal static NoteBounds AttachmentBounds(NoteBounds note, NoteSide side, double scale = 1)
@@ -74,7 +93,7 @@ internal sealed class EdgeLinkHandles : Grid, IDisposable
         var button = new Button
         {
             Content = visual, Background = Brushes.Transparent, BorderThickness = new Thickness(0), Padding = new Thickness(0),
-            Focusable = false, Cursor = Cursors.Cross
+            Style = (Style)Resources["ConnectionPortButton"], Focusable = false, Cursor = Cursors.Cross
         };
         AutomationProperties.SetName(button, $"Создать связь: {side switch { NoteSide.Left => "слева", NoteSide.Top => "сверху", NoteSide.Right => "справа", _ => "снизу" }}");
         var window = new Window
@@ -129,6 +148,11 @@ internal sealed class EdgeLinkHandles : Grid, IDisposable
         if (!NativeWindows.IsShown(hwnd)) { HidePorts(); return; }
         var note = NativeWindows.Rect(hwnd).Bounds;
         var scale = NativeWindows.Scale(hwnd);
+        var toolbar = _toolbar?.Invoke();
+        var toolbarHandle = toolbar is { IsVisible: true } ? new WindowInteropHelper(toolbar).Handle : 0;
+        var reserved = toolbarHandle != 0 ? NativeWindows.Rect(toolbarHandle).Bounds : (NoteBounds?)null;
+        var screen = System.Windows.Forms.Screen.FromRectangle(System.Drawing.Rectangle.FromLTRB((int)note.X, (int)note.Y, (int)note.Right, (int)note.Bottom)).WorkingArea;
+        var workArea = new NoteBounds(screen.Left, screen.Top, screen.Width, screen.Height);
         var visible = _targeted ? _attachments : _ports;
         var hidden = _targeted ? _ports : _attachments;
         foreach (var port in hidden.Values) port.Window.Hide();
@@ -136,7 +160,7 @@ internal sealed class EdgeLinkHandles : Grid, IDisposable
         {
             if (!visible.TryGetValue(side, out var port)) { port = CreatePort(side, _targeted); visible.Add(side, port); }
             port.Window.Topmost = _host.Topmost;
-            var bounds = _targeted ? AttachmentBounds(note, side, scale) : MarkerBounds(note, side, scale);
+            var bounds = _targeted ? AttachmentBounds(note, side, scale) : MarkerBounds(note, side, scale, reserved, workArea);
             // Position before first Show to avoid flashes at the default window location.
             var handle = new WindowInteropHelper(port.Window).EnsureHandle();
             NativeWindows.SetBounds(handle, new ScreenRect
@@ -145,6 +169,7 @@ internal sealed class EdgeLinkHandles : Grid, IDisposable
                 Right = (int)Math.Round(bounds.Right), Bottom = (int)Math.Round(bounds.Bottom)
             });
             if (!port.Window.IsVisible) port.Window.Show();
+            if (toolbarHandle != 0) NativeWindows.PutBehind(handle, toolbarHandle, toolbarHandle);
         }
         _timer.Start();
     }
@@ -185,6 +210,7 @@ internal sealed class EdgeLinkHandles : Grid, IDisposable
             var blue = new SolidColorBrush(Color.FromRgb(74, 164, 255));
             if (IsAttachment) { dc.DrawEllipse(Brushes.White, new Pen(blue, 1.8), center, 6, 6); return; }
             if (!IsHovered) { dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(145, 202, 255)), new Pen(Brushes.White, 1.8), center, 4.5, 4.5); return; }
+            dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(26, 74, 164, 255)), null, center, 12, 12);
             dc.PushTransform(new TranslateTransform(center.X, center.Y));
             dc.PushTransform(new RotateTransform(Side switch { NoteSide.Left => 180, NoteSide.Top => 270, NoteSide.Bottom => 90, _ => 0 }));
             var arrow = Geometry.Parse("M -8,-3 L 0,-3 L 0,-7 L 9,0 L 0,7 L 0,3 L -8,3 Z");

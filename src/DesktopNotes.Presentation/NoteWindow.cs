@@ -149,7 +149,7 @@ public sealed class NoteWindow : Window
         _linkHandles = new EdgeLinkHandles(this,
             side => LinkDragStarted?.Invoke(this, side),
             () => LinkDragUpdated?.Invoke(), () => LinkDragCompleted?.Invoke(), () => CancelInteraction?.Invoke(),
-            () => InteractionDeactivated?.Invoke(this));
+            () => InteractionDeactivated?.Invoke(this), toolbar: () => _formatting);
         shell.Children.Add(_linkHandles);
         Content = shell;
         _formatting = new NoteFormattingToolbar(this, vm);
@@ -442,8 +442,8 @@ public sealed class NoteWindow : Window
     {
         if (!selected) EndEditing();
         _connectionFrame.BorderBrush = selected || targeted ? new SolidColorBrush(System.Windows.Media.Color.FromRgb(74, 164, 255)) : Brushes.Transparent;
-        _linkHandles.SetState(selected, targeted);
         _formatting.SetSelected(selected);
+        _linkHandles.SetState(selected, targeted);
     }
 
     public void SaveBounds()

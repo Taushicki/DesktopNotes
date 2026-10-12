@@ -272,7 +272,7 @@ internal sealed class ArrowOverlay : Window
             var width = StrokeWidth + (IsHovered ? 0.35 : 0);
             var pen = new Pen(brush, width) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
             pen.DashStyle = LinkStyle.Pattern switch { LinkLinePattern.Dashed => DashStyles.Dash, LinkLinePattern.Dotted => DashStyles.Dot, _ => DashStyles.Solid };
-            if (IsHovered) dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(30, 74, 164, 255)), width + 4), geometry);
+            if (IsHovered || IsSelected) dc.DrawGeometry(null, new Pen(new SolidColorBrush(Color.FromArgb(IsSelected ? (byte)38 : (byte)30, 74, 164, 255)), width + 4), geometry);
             dc.DrawGeometry(null, pen, geometry);
             dc.DrawGeometry(brush, null, head);
             // Interactive overlays use owned endpoint windows above the notes.
