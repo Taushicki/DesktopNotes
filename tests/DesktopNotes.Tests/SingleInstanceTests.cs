@@ -8,13 +8,15 @@ public sealed class SingleInstanceTests
     [Fact]
     public void ProductionInstanceHoldsInstallerGuardForItsLifetime()
     {
-        using (var instance = new SingleInstance())
+        var name = "DesktopNotes-test-" + Guid.NewGuid().ToString("N");
+        var installationMutex = "Local\\" + name;
+        using (var instance = new SingleInstance(name, installationMutex))
         {
             Assert.True(instance.IsPrimary);
-            Assert.True(Mutex.TryOpenExisting(SingleInstance.InstallationMutexName, out var guard));
+            Assert.True(Mutex.TryOpenExisting(installationMutex, out var guard));
             guard!.Dispose();
         }
-        Assert.False(Mutex.TryOpenExisting(SingleInstance.InstallationMutexName, out var remaining));
+        Assert.False(Mutex.TryOpenExisting(installationMutex, out var remaining));
         remaining?.Dispose();
     }
 

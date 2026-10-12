@@ -662,6 +662,15 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 
     private sealed class InlineStyling(LiveMarkdownEditor editor) : DocumentColorizingTransformer
     {
+        private static TextDecorationCollection MergeDecorations(TextDecorationCollection? existing, TextDecorationCollection added)
+        {
+            if (existing is null || existing.Count == 0) return added;
+            var combined = new TextDecorationCollection(existing);
+            foreach (var decoration in added)
+                if (!combined.Any(item => item.Location == decoration.Location)) combined.Add(decoration);
+            combined.Freeze(); return combined;
+        }
+
         protected override void ColorizeLine(ICSharpCode.AvalonEdit.Document.DocumentLine line)
         {
             foreach (var range in editor.Layout.Styles)
@@ -676,13 +685,13 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
                         range.HeadingLevel > 0 ? range.HeadingLevel == 1 ? FontWeights.Bold : FontWeights.SemiBold :
                         style.HasFlag(InlineMarkdownLayout.Style.Bold) ? FontWeights.Bold : face.Weight, face.Stretch));
                     if (range.Scale != 1) element.TextRunProperties.SetFontRenderingEmSize(editor.FontSize * range.Scale);
-                    if (style.HasFlag(InlineMarkdownLayout.Style.Strike)) element.TextRunProperties.SetTextDecorations(TextDecorations.Strikethrough);
+                    if (style.HasFlag(InlineMarkdownLayout.Style.Strike)) element.TextRunProperties.SetTextDecorations(MergeDecorations(element.TextRunProperties.TextDecorations, TextDecorations.Strikethrough));
                     if (style.HasFlag(InlineMarkdownLayout.Style.Highlight)) element.TextRunProperties.SetBackgroundBrush(editor.Theme.Highlight);
                     if (style.HasFlag(InlineMarkdownLayout.Style.BlockCode))
                         element.TextRunProperties.SetTypeface(new Typeface(new FontFamily("Consolas"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal));
-                    else if (style.HasFlag(InlineMarkdownLayout.Style.Code)) element.TextRunProperties.SetBackgroundBrush(editor.Theme.InlineCode);
+                    else if (style.HasFlag(InlineMarkdownLayout.Style.Code) && element.TextRunProperties.BackgroundBrush is null) element.TextRunProperties.SetBackgroundBrush(editor.Theme.InlineCode);
                     if (style.HasFlag(InlineMarkdownLayout.Style.Link))
-                    { element.TextRunProperties.SetForegroundBrush(editor.Theme.Link); element.TextRunProperties.SetTextDecorations(TextDecorations.Underline); }
+                    { element.TextRunProperties.SetForegroundBrush(editor.Theme.Link); element.TextRunProperties.SetTextDecorations(MergeDecorations(element.TextRunProperties.TextDecorations, TextDecorations.Underline)); }
                 });
             }
         }

@@ -74,11 +74,18 @@ public static class MarkdownEditingCommands
 
     public static MarkdownTextEdit ToggleInline(string text, int start, int length, string marker)
     {
-        if (marker == "**" && length > 0) return MarkdownFormatting.ToggleBold(text, start, length);
+        if (length > 0) return MarkdownFormatting.ToggleInline(text, start, length, marker);
         var selected = text.Substring(start, length);
         if (selected.Length >= marker.Length * 2 && selected.StartsWith(marker, StringComparison.Ordinal) && selected.EndsWith(marker, StringComparison.Ordinal))
             return new(start, length, selected[marker.Length..^marker.Length], 0, length - marker.Length * 2);
-        if (start >= marker.Length && start + length + marker.Length <= text.Length &&
+        int Stars(int index, int direction)
+        {
+            var count = 0;
+            while (index >= 0 && index < text.Length && text[index] == '*') { count++; index += direction; }
+            return count;
+        }
+        var canRemove = marker != "*" || Stars(start - 1, -1) % 2 == 1 && Stars(start + length, 1) % 2 == 1;
+        if (canRemove && start >= marker.Length && start + length + marker.Length <= text.Length &&
             text.AsSpan(start - marker.Length, marker.Length).SequenceEqual(marker) && text.AsSpan(start + length, marker.Length).SequenceEqual(marker))
             return new(start - marker.Length, length + marker.Length * 2, selected, 0, length);
         return new(start, length, marker + selected + marker, marker.Length, length);

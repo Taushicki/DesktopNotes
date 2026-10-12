@@ -353,6 +353,34 @@ public sealed class InlineMarkdownEditorTests
         finally { host.Close(); }
     });
 
+
+    [Fact]
+    public Task CombinedStylesRenderTogetherIncludingCodeAndLinkDecorations() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = "[==~~***`word`***~~==](https://example.com)" };
+        var host = Host(editor);
+        try
+        {
+            host.Show(); host.UpdateLayout();
+            var offset = editor.Text.IndexOf("word", StringComparison.Ordinal);
+            var line = editor.TextArea.TextView.VisualLines.Single();
+            var element = line.Elements.First(item => item.DocumentLength > 0 && line.StartOffset + item.RelativeTextOffset <= offset && line.StartOffset + item.RelativeTextOffset + item.DocumentLength > offset);
+            var properties = element.TextRunProperties;
+            Assert.Equal(FontWeights.Bold, properties.Typeface.Weight);
+            Assert.Equal(FontStyles.Italic, properties.Typeface.Style);
+            Assert.Equal("Consolas", properties.Typeface.FontFamily.Source);
+            Assert.Same(editor.Theme.Highlight, properties.BackgroundBrush);
+            Assert.Same(editor.Theme.Link, properties.ForegroundBrush);
+            Assert.Contains(properties.TextDecorations, decoration => decoration.Location == TextDecorationLocation.Strikethrough);
+            Assert.Contains(properties.TextDecorations, decoration => decoration.Location == TextDecorationLocation.Underline);
+            editor.Select(offset, 4); editor.ToggleBoldSelection(); host.UpdateLayout();
+            Assert.DoesNotContain("***", editor.Text);
+            editor.Undo(); host.UpdateLayout();
+            Assert.Equal("[==~~***`word`***~~==](https://example.com)", editor.Text);
+        }
+        finally { host.Close(); }
+    });
+
     private static Window Host(object content) => new() { Content = content, Left = -10000, Top = -10000, Width = 320, Height = 500, ShowActivated = false, ShowInTaskbar = false };
     private static string Geometry(TextEditor editor) => string.Join(";", editor.TextArea.TextView.VisualLines.Select(line =>
         $"{line.StartOffset}:{line.VisualTop:R}:{line.Height:R}:" + string.Join(",", line.TextLines.Select(text => $"{text.WidthIncludingTrailingWhitespace:R}/{text.Height:R}"))));

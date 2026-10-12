@@ -14,15 +14,15 @@ public sealed class SingleInstance : IDisposable
     private Task? _listener;
     public bool IsPrimary { get; }
 
-    public SingleInstance(string? instanceName = null)
+    public SingleInstance(string? instanceName = null, string? installationMutexName = null)
     {
         var user = WindowsIdentity.GetCurrent().User?.Value ?? Environment.UserName;
         _pipeName = instanceName ?? "DesktopNotes-" + user;
         // No thread-affine mutex ownership: retaining the named handle defines the primary lifetime.
         _mutex = new Mutex(false, "Global\\" + _pipeName, out var created);
         IsPrimary = created;
-        if (IsPrimary && instanceName is null)
-            _installationMutex = new Mutex(false, InstallationMutexName);
+        if (IsPrimary && (instanceName is null || installationMutexName is not null))
+            _installationMutex = new Mutex(false, installationMutexName ?? InstallationMutexName);
     }
 
     public async Task SendAsync(string command, CancellationToken cancellationToken = default)
