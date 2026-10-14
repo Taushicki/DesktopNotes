@@ -16,6 +16,28 @@ public sealed class AtomicTableTests
 {
     private const string Source = "# Title\n\n| Header | Second |\n| --- | --- |\n| one | two |\n\nafter";
 
+    [Fact]
+    public Task MainCaretSkipsTableEdgeAndHiddenSeparatorWithoutChangingText() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = Source };
+        var host = Host(editor);
+        try
+        {
+            host.Show(); host.UpdateLayout(); Keyboard.Focus(editor.TextArea);
+            var table = Assert.Single(editor.Tables.Views).Model;
+            var after = editor.Text.IndexOf("after", StringComparison.Ordinal);
+            foreach (var offset in new[] { table.Start + table.Length, table.Start + table.Length + 1 })
+            {
+                editor.Select(offset, 0); host.UpdateLayout();
+                Assert.Equal(after, editor.CaretOffset);
+                Assert.Equal(Source, editor.Text);
+                var line = editor.TextArea.TextView.GetOrConstructVisualLine(editor.Document.GetLineByOffset(editor.CaretOffset));
+                Assert.Equal(after, line.FirstDocumentLine.Offset);
+            }
+        }
+        finally { host.Close(); }
+    });
+
     [Theory]
     [InlineData(14)]
     [InlineData(17)]

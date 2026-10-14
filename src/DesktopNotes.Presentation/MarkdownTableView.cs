@@ -261,6 +261,21 @@ internal sealed class TableViewRegistry : IDisposable, IReadOnlySectionProvider
         foreach (var section in _collapsed) section.Uncollapse(); _collapsed.Clear();
         foreach (var view in _views.Values) view.Dispose(); _views.Clear();
     }
+    internal int? VisibleCaretTarget()
+    {
+        if (ActiveCell is not null) return null;
+        foreach (var view in _views.Values)
+        {
+            var end = view.Model.Start + view.Model.Length;
+            var displayEnd = InlineMarkdownLayout.TableDisplayEnd(_editor.Text, end);
+            if (_editor.CaretOffset < end || _editor.CaretOffset > displayEnd) continue;
+            var next = _editor.Document.GetLineByOffset(end).NextLine;
+            if (displayEnd > end) next = next?.NextLine;
+            if (next is not null) return next.Offset;
+        }
+        return null;
+    }
+
     internal bool EnterAtCaret(bool backwards)
     {
         var view = _views.Values.FirstOrDefault(view => _editor.CaretOffset >= view.Model.Start && _editor.CaretOffset <= view.Model.Start + view.Model.Length);

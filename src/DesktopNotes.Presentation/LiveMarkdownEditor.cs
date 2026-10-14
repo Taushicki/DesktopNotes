@@ -215,6 +215,12 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     private void OnFenceCaretChanged(object? sender, EventArgs e)
     {
         if (_disposed || _redirectingFenceCaret || Document.IsInUpdate || _parsedText != Text || SelectionLength != 0) return;
+        if (Tables.VisibleCaretTarget() is { } tableTarget)
+        {
+            _redirectingFenceCaret = true;
+            try { Select(tableTarget, 0); }
+            finally { _redirectingFenceCaret = false; }
+        }
         var line = Document.GetLineByOffset(CaretOffset);
         foreach (var frame in Layout.CodeFrames)
         {
