@@ -92,7 +92,7 @@ internal sealed class TableEdgeControls : Canvas, IDisposable
     private void OnMouseLeave(object sender, MouseEventArgs args) => Hide();
     private void OnGeometryChanged(object? sender, EventArgs args) { Hide(); UpdatePointer(_view.IsMouseOver ? Mouse.GetPosition(_view) : null); }
     private void OnTextChanged(object? sender, EventArgs args) => Hide();
-    private void OnReadOnlyChanged(object? sender, EventArgs args) { _editor.TextArea.ReadOnlySectionProvider = _editor.Tables; _editor.Tables.UpdateAppearance(); if (_editor.IsReadOnly) Hide(); }
+    private void OnReadOnlyChanged(object? sender, EventArgs args) { _editor.TextArea.ReadOnlySectionProvider = _editor.Tables; _editor.Tables.UpdateEditingState(); if (_editor.IsReadOnly) Hide(); }
 
     public void Dispose()
     {

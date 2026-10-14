@@ -16,6 +16,38 @@ public sealed class AtomicTableTests
 {
     private const string Source = "# Title\n\n| Header | Second |\n| --- | --- |\n| one | two |\n\nafter";
 
+    [Theory]
+    [InlineData(14)]
+    [InlineData(17)]
+    [InlineData(24)]
+    public Task ReadOnlyTablesKeepGeometryAndNeverClipCellText(double size) => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = Source };
+        editor.SetAppearance(new Note { FontSize = size, Color = NoteColor.MaterialDark });
+        var host = Host(editor);
+        try
+        {
+            host.Show(); host.UpdateLayout(); Pump();
+            var table = Assert.Single(editor.Tables.Views);
+            table.Cells.ElementAt(2).Text = "Значение **жирный** `код`\nвторая строка";
+            host.UpdateLayout(); Pump();
+            var cells = table.Cells.ToArray();
+            editor.SetAppearance(new Note { FontSize = size + 3, Color = NoteColor.MaterialDark });
+            host.UpdateLayout(); Pump();
+            Assert.All(cells, cell => Assert.True(cell.ViewportHeight + .1 >= cell.TextArea.TextView.DocumentHeight,
+                $"after font change: viewport={cell.ViewportHeight}; content={cell.TextArea.TextView.DocumentHeight}"));
+            var heights = cells.Select(cell => cell.ActualHeight).ToArray();
+            foreach (var readOnly in new[] { true, false, true })
+            {
+                editor.IsReadOnly = readOnly; host.UpdateLayout(); Pump();
+                Assert.Equal(heights, cells.Select(cell => cell.ActualHeight).ToArray());
+                Assert.All(cells, cell => Assert.True(cell.ViewportHeight + .1 >= cell.TextArea.TextView.DocumentHeight,
+                    $"size={size}; readonly={readOnly}; viewport={cell.ViewportHeight}; content={cell.TextArea.TextView.DocumentHeight}"));
+            }
+        }
+        finally { host.Close(); }
+    });
+
     [Fact]
     public Task SelectingWordsInDifferentCellsLeavesOnlyOneActiveSelection() => OnSta(() =>
     {

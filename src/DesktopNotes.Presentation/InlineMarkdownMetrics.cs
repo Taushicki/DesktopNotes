@@ -20,6 +20,7 @@ internal static class InlineMarkdownMetrics
     }
     internal static long MeasurementCount(LiveMarkdownEditor editor) => Current(editor).Measurements;
     internal static double Measure(LiveMarkdownEditor editor, InlineMarkdownLayout.Cell cell) => Current(editor).Measure(editor, cell);
+    internal static double MeasureHeight(LiveMarkdownEditor editor, InlineMarkdownLayout.Cell cell) => Current(editor).MeasureHeight(editor, cell);
     internal static double MeasureColumn(LiveMarkdownEditor editor, IReadOnlyList<InlineMarkdownLayout.Cell> column)
     {
         var cache = Current(editor);
@@ -57,7 +58,7 @@ internal static class InlineMarkdownMetrics
         internal Key Revision;
         internal long Measurements;
         internal readonly Dictionary<IReadOnlyList<InlineMarkdownLayout.Cell>, double> Columns = new(ReferenceEqualityComparer.Instance);
-        private readonly Dictionary<InlineMarkdownLayout.Cell, double> _cells = [];
+        private readonly Dictionary<InlineMarkdownLayout.Cell, Size> _cells = [];
         private string _source = "";
         private RangeIndex<InlineMarkdownLayout.Decoration> _hidden = new([], part => part.Start, part => part.Length);
         private RangeIndex<InlineMarkdownLayout.StyledRange> _styles = new([], part => part.Start, part => part.Length);
@@ -67,16 +68,21 @@ internal static class InlineMarkdownMetrics
             _hidden = new(revision.Layout.Decorations.Where(part => part.Kind == InlineMarkdownLayout.DecorationKind.Hidden), part => part.Start, part => part.Length);
             _styles = new(revision.Layout.Styles, part => part.Start, part => part.Length);
         }
+        internal double MeasureHeight(LiveMarkdownEditor editor, InlineMarkdownLayout.Cell cell)
+        {
+            Measure(editor, cell);
+            return _cells[cell].Height;
+        }
         internal double Measure(LiveMarkdownEditor editor, InlineMarkdownLayout.Cell cell)
         {
-            if (_cells.TryGetValue(cell, out var width)) return width;
+            if (_cells.TryGetValue(cell, out var measured)) return measured.Width;
             Measurements++;
             var content = new StringBuilder(); var offsets = new List<int>();
             var hidden = new bool[cell.Length]; var end = cell.Start + cell.Length;
             foreach (var part in _hidden.Overlapping(cell.Start, end))
                 Array.Fill(hidden, true, Math.Max(cell.Start, part.Start) - cell.Start, Math.Min(end, part.Start + part.Length) - Math.Max(cell.Start, part.Start));
             for (var i = 0; i < cell.Length; i++) if (!hidden[i]) { content.Append(_source[cell.Start + i]); offsets.Add(cell.Start + i); }
-            if (content.Length == 0) { _cells[cell] = 0; return 0; }
+            if (content.Length == 0) { _cells[cell] = new Size(0, editor.FontSize * editor.FontFamily.LineSpacing); return 0; }
             var text = new FormattedText(content.ToString(), CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                 new Typeface(editor.FontFamily, editor.FontStyle, editor.FontWeight, editor.FontStretch), editor.FontSize, editor.Foreground, 1);
             foreach (var range in _styles.Overlapping(cell.Start, end))
@@ -91,7 +97,8 @@ internal static class InlineMarkdownMetrics
                 if (range.Style.HasFlag(InlineMarkdownLayout.Style.BlockCode)) { text.SetFontWeight(FontWeights.Normal, first, count); text.SetFontStyle(FontStyles.Normal, first, count); }
                 if (range.Scale != 1) text.SetFontSize(editor.FontSize * range.Scale, first, count);
             }
-            return _cells[cell] = text.WidthIncludingTrailingWhitespace;
+            _cells[cell] = new Size(text.WidthIncludingTrailingWhitespace, text.Height);
+            return text.WidthIncludingTrailingWhitespace;
         }
     }
 }

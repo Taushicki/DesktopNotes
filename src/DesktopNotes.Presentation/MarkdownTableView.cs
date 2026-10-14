@@ -108,12 +108,14 @@ internal sealed class MarkdownTableView : Grid, IDisposable
             editor.SetAppearance(_parent.Appearance with { FontSize = _parent.FontSize, IsBold = position.Row == 0 || _parent.Appearance.IsBold,
                 TextAlignment = Model.Alignment[position.Column].StartsWith(':') && Model.Alignment[position.Column].EndsWith(':') ? NoteTextAlignment.Center :
                     Model.Alignment[position.Column].EndsWith(':') ? NoteTextAlignment.Right : NoteTextAlignment.Left });
-            editor.IsReadOnly = _parent.IsReadOnly;
-            editor.Focusable = !editor.IsReadOnly; editor.TextArea.Focusable = !editor.IsReadOnly;
-            if (editor.IsReadOnly) editor.TextArea.Caret.Hide();
-            editor.Height = Math.Max(1, editor.Document.LineCount) * editor.TextArea.TextView.DefaultLineHeight + 1;
+            // DefaultLineHeight can still refer to the previous font until the
+            // next layout pass. Measure the current styled text instead.
+            var minimum = Math.Max(1, editor.Document.LineCount) * editor.FontSize * editor.FontFamily.LineSpacing;
+            var content = InlineMarkdownMetrics.MeasureHeight(editor, new(0, editor.Document.TextLength));
+            editor.Height = Math.Ceiling(Math.Max(minimum, content)) + 2;
             ((Border)editor.Parent).BorderBrush = theme.CodeOutline.Brush;
         }
+        UpdateEditingState();
         var width = 0d;
         for (var c = 0; c < Model.ColumnCount; c++)
         {
@@ -123,6 +125,16 @@ internal sealed class MarkdownTableView : Grid, IDisposable
             _cells.ColumnDefinitions[c].Width = new GridLength(size); width += size;
         }
         Width = Math.Min(width + 12, Math.Max(70, _parent.TextArea.TextView.ActualWidth - 2));
+    }
+
+    internal void UpdateEditingState()
+    {
+        foreach (var editor in _editors.Values)
+        {
+            editor.IsReadOnly = _parent.IsReadOnly;
+            editor.Focusable = !editor.IsReadOnly; editor.TextArea.Focusable = !editor.IsReadOnly;
+            if (editor.IsReadOnly) editor.TextArea.Caret.Hide();
+        }
     }
 
     internal bool Navigate(Key key, ModifierKeys modifiers)
@@ -291,6 +303,7 @@ internal sealed class TableViewRegistry : IDisposable, IReadOnlySectionProvider
     internal MarkdownTableView? Get(int start) => _views.GetValueOrDefault(start);
     internal bool Contains(int offset) => _views.Values.Any(view => offset >= view.Model.Start && offset < view.Model.Start + view.Model.Length);
     internal void UpdateAppearance() { foreach (var view in _views.Values) view.UpdateAppearance(); }
+    internal void UpdateEditingState() { foreach (var view in _views.Values) view.UpdateEditingState(); }
     internal void Expand(int start, TableExpansion expansion)
     {
         if (_editor.IsReadOnly || Get(start) is not { } view) return;
