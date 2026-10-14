@@ -317,6 +317,16 @@ internal sealed class TableViewRegistry : IDisposable, IReadOnlySectionProvider
         foreach (var view in _views.Values)
         {
             var start = view.Model.Start; var end = start + view.Model.Length;
+            var previous = _editor.Document.GetLineByOffset(start).PreviousLine;
+            if (previous is not null && _editor.SelectionStart >= previous.Offset &&
+                _editor.SelectionStart + _editor.SelectionLength <= previous.EndOffset &&
+                string.IsNullOrWhiteSpace(_editor.Document.GetText(previous)))
+            {
+                var offset = _editor.SelectionStart - previous.Offset;
+                var original = _editor.Document.GetText(previous);
+                var replacement = original.Remove(offset, _editor.SelectionLength).Insert(offset, text) + view.Model.NewLine;
+                _editor.ApplyEdit(new(previous.Offset, previous.Length, replacement, offset + text.Length, 0)); return true;
+            }
             if (_editor.SelectionLength != 0) continue;
             if (_editor.CaretOffset == start) { _editor.ApplyEdit(new(start, 0, text + view.Model.NewLine + view.Model.NewLine, text.Length, 0)); return true; }
             if (_editor.CaretOffset == end) { _editor.ApplyEdit(new(end, 0, view.Model.NewLine + view.Model.NewLine + text, view.Model.NewLine.Length * 2 + text.Length, 0)); return true; }

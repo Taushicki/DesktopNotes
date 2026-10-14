@@ -16,6 +16,34 @@ public sealed class AtomicTableTests
 {
     private const string Source = "# Title\n\n| Header | Second |\n| --- | --- |\n| one | two |\n\nafter";
 
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    public Task TypingAboveTablePreservesItsParagraphBoundary(string newline) => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = Source.Replace("\n", newline) };
+        var original = editor.Text;
+        var host = Host(editor);
+        try
+        {
+            host.Show(); host.UpdateLayout();
+            var table = Assert.Single(editor.Tables.Views).Model;
+            var blank = editor.Document.GetLineByOffset(table.Start).PreviousLine!;
+            Keyboard.Focus(editor.TextArea); editor.Select(blank.Offset, 0);
+            foreach (var text in new[] { "text", "|", "-" })
+            {
+                editor.TextArea.PerformTextInput(text); host.UpdateLayout(); Pump();
+                var restored = Assert.Single(MarkdownTableEditing.ReadTables(editor.Text));
+                Assert.Equal(table.Rows[0], restored.Rows[0]); Assert.Equal(table.Rows[1], restored.Rows[1]);
+                Assert.Single(editor.Tables.Views);
+            }
+            Assert.Contains("text|-" + newline + newline + "| Header", editor.Text);
+            while (editor.CanUndo) editor.Undo();
+            Assert.Equal(original, editor.Text);
+        }
+        finally { host.Close(); }
+    });
+
     [Fact]
     public Task TypingBelowNewTableKeepsItsVisualBlock() => OnSta(() =>
     {
