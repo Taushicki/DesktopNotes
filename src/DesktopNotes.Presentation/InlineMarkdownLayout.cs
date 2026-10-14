@@ -215,12 +215,21 @@ internal sealed class InlineMarkdownLayout
         if (closing.Success && closing.Index >= prefix.Length) Hide(start + closing.Index, closing.Length);
     }
 
+    internal static int TableDisplayEnd(string source, int end)
+    {
+        // Consume the one empty Markdown separator line as part of the widget;
+        // additional intentional empty lines keep their normal visual height.
+        if (source.AsSpan(end).StartsWith("\r\n\r\n")) return end + 2;
+        if (source.AsSpan(end).StartsWith("\n\n")) return end + 1;
+        return end;
+    }
+
     private void DecorateTable(Markdig.Extensions.Tables.Table table, string source)
     {
         _tables.Add((table.Span.Start, table.Span.End));
         var atomicEnd = table.Span.End + 1;
         while (atomicEnd > table.Span.Start && source[atomicEnd - 1] is '\r' or '\n') atomicEnd--;
-        Decorations.Add(new(table.Span.Start, atomicEnd - table.Span.Start, DecorationKind.Table));
+        Decorations.Add(new(table.Span.Start, TableDisplayEnd(source, atomicEnd) - table.Span.Start, DecorationKind.Table));
         var rows = new List<(int Start, string Text, Cell[] Cells)>();
         var offset = table.Span.Start;
         foreach (var raw in source.Substring(table.Span.Start, table.Span.Length).Split('\n'))

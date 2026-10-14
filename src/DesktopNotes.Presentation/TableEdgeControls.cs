@@ -13,7 +13,7 @@ namespace DesktopNotes.Presentation;
 // An input layer over the existing Markdown table; it never owns document text.
 internal sealed class TableEdgeControls : Canvas, IDisposable
 {
-    private const double Size = 20, Reach = 8;
+    private const double Size = 12, Reach = 8;
     private readonly LiveMarkdownEditor _editor;
     private readonly TextView _view;
     private readonly DependencyPropertyDescriptor _readOnly;
@@ -58,18 +58,17 @@ internal sealed class TableEdgeControls : Canvas, IDisposable
         {
             if (Bounds(table) is not { } bounds || point.Y < bounds.Top || point.Y > bounds.Bottom + Reach) continue;
             var bottom = Math.Abs(point.Y - bounds.Bottom);
-            var left = Math.Abs(point.X - bounds.Left);
             var right = Math.Abs(point.X - bounds.Right);
-            var edge = Math.Min(bottom, Math.Min(left, right));
+            var edge = Math.Min(bottom, right);
             if (edge > Reach || point.X < bounds.Left - Reach || point.X > bounds.Right + Reach) continue;
             // A clipped edge is not the edge of the table.
             if (edge == bottom && (bounds.Bottom < 0 || bounds.Bottom > _view.ActualHeight) ||
-                edge == right && bounds.Right > _view.ActualWidth || edge == left && bounds.Left < 0) continue;
+                edge == right && bounds.Right > _view.ActualWidth) continue;
             _tableStart = table.Start;
-            _expansion = edge == bottom ? TableExpansion.Row : edge == left ? TableExpansion.ColumnLeft : TableExpansion.ColumnRight;
+            _expansion = edge == bottom ? TableExpansion.Row : TableExpansion.ColumnRight;
             AddButton.Width = _expansion == TableExpansion.Row ? bounds.Width : Size;
             AddButton.Height = _expansion == TableExpansion.Row ? Size : bounds.Height;
-            SetLeft(AddButton, _expansion == TableExpansion.Row ? bounds.Left : _expansion == TableExpansion.ColumnLeft ? bounds.Left - Size : bounds.Right);
+            SetLeft(AddButton, _expansion == TableExpansion.Row ? bounds.Left : bounds.Right);
             SetTop(AddButton, _expansion == TableExpansion.Row ? bounds.Bottom : bounds.Top);
             AddButton.Background = _editor.Theme.Hover;
             _icon.Stroke = _editor.Theme.Foreground; AddButton.Foreground = _editor.Theme.CodeOutline.Brush;

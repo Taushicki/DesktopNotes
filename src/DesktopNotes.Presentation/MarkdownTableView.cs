@@ -29,14 +29,13 @@ internal sealed class MarkdownTableView : Grid, IDisposable
     internal MarkdownTableView(LiveMarkdownEditor parent, MarkdownTableModel model)
     {
         _parent = parent; Model = model;
-        ColumnDefinitions.Add(new() { Width = new GridLength(20) });
         ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
-        ColumnDefinitions.Add(new() { Width = new GridLength(20) });
+        ColumnDefinitions.Add(new() { Width = new GridLength(12) });
         RowDefinitions.Add(new() { Height = GridLength.Auto });
-        RowDefinitions.Add(new() { Height = new GridLength(20) });
+        RowDefinitions.Add(new() { Height = new GridLength(12) });
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/DesktopNotes;component/TableStyles.xaml", UriKind.Relative) });
         Scroll = new ScrollViewer { Content = _cells, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Style = (System.Windows.Style)Resources["TableScrollViewer"] };
-        SetColumn(Scroll, 1); Children.Add(Scroll);
+        SetColumn(Scroll, 0); Children.Add(Scroll);
         Scroll.ScrollChanged += (_, _) => { _horizontalTarget = Scroll.HorizontalOffset; _parent.TableControls?.UpdatePointer(null); };
         Sync(model);
     }
@@ -123,7 +122,7 @@ internal sealed class MarkdownTableView : Grid, IDisposable
             var size = Math.Max(100 * _parent.FontSize / 14, natural + 20);
             _cells.ColumnDefinitions[c].Width = new GridLength(size); width += size;
         }
-        Width = Math.Min(width + 40, Math.Max(70, _parent.TextArea.TextView.ActualWidth - 2));
+        Width = Math.Min(width + 12, Math.Max(70, _parent.TextArea.TextView.ActualWidth - 2));
     }
 
     internal bool Navigate(Key key, ModifierKeys modifiers)
@@ -257,7 +256,11 @@ internal sealed class TableViewRegistry : IDisposable, IReadOnlySectionProvider
         if (view is null) return false;
         var end = view.Model.Start + view.Model.Length;
         var line = _editor.Document.GetLineByOffset(end);
-        if (line.NextLine is { } next) _editor.Select(next.Offset, 0);
+        if (line.NextLine is { } next)
+        {
+            if (InlineMarkdownLayout.TableDisplayEnd(_editor.Text, end) > end && next.NextLine is { } following) next = following;
+            _editor.Select(next.Offset, 0);
+        }
         else _editor.ApplyEdit(new(end, 0, view.Model.NewLine, view.Model.NewLine.Length, 0));
         ClearFocus(); _editor.TextArea.Focus(); return true;
     }
@@ -273,7 +276,9 @@ internal sealed class TableViewRegistry : IDisposable, IReadOnlySectionProvider
             if (_views.TryGetValue(model.Start, out var view)) view.Sync(model);
             else _views.Add(model.Start, new MarkdownTableView(_editor, model));
             var first = _editor.Document.GetLineByOffset(model.Start);
-            var last = _editor.Document.GetLineByOffset(model.Start + model.Length - 1);
+            var end = model.Start + model.Length;
+            var displayEnd = InlineMarkdownLayout.TableDisplayEnd(_editor.Text, end);
+            var last = _editor.Document.GetLineByOffset(displayEnd > end ? displayEnd : end - 1);
             if (first.NextLine is { } next && last.LineNumber > first.LineNumber)
                 _collapsed.Add(_editor.TextArea.TextView.CollapseLines(next, last));
         }

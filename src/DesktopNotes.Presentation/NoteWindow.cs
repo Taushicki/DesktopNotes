@@ -139,7 +139,7 @@ public sealed class NoteWindow : Window
         // inset and the collapse button's space inside the text area only.
         _body.Margin = new Thickness(0, 0, -7.5, 0);
         _editor.Padding = new Thickness(6, 6, 0, 6);
-        _editor.TextArea.Margin = new Thickness(0, 0, 41.5, 0);
+        _editor.TextArea.Margin = new Thickness(0, 0, 12, 0);
         Grid.SetRow(_body, 1); root.Children.Add(_body);
         var shell = new Grid();
         shell.Children.Add(root);

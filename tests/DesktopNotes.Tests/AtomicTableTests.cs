@@ -88,6 +88,11 @@ public sealed class AtomicTableTests
             table.Cells.ElementAt(2).Text = new string('-', 160);
             host.UpdateLayout();
             Assert.True(table.Scroll.ScrollableWidth > 300);
+            Assert.Equal(0, table.Scroll.TranslatePoint(new Point(), table).X, 1);
+            Assert.InRange(table.ActualWidth - table.Scroll.ActualWidth, 0, 12.1);
+            Assert.InRange(table.Scroll.ActualHeight - grid.ActualHeight, 0, 4.1);
+            var afterLine = editor.Document.GetLineByOffset(editor.Text.IndexOf("after", StringComparison.Ordinal));
+            Assert.True(editor.TextArea.TextView.GetOrConstructVisualLine(afterLine.PreviousLine!).FirstDocumentLine.Offset < afterLine.PreviousLine!.Offset);
             Assert.True(table.ActualWidth <= editor.TextArea.TextView.ActualWidth);
             table.Scroll.ScrollToHorizontalOffset(100); host.UpdateLayout();
             Assert.True(table.Scroll.HorizontalOffset > 0);
