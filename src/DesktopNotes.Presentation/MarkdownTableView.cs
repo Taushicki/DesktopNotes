@@ -61,7 +61,7 @@ internal sealed class MarkdownTableView : Grid, IDisposable
                         VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled };
                     editor.OpenWebLinkRequested += _parent.FollowWebLink;
                     editor.OpenNoteRequested += _parent.FollowNoteLink;
-                    editor.TextArea.GotKeyboardFocus += (_, args) => { if (args.NewFocus == editor.TextArea) { _parent.Tables.ClearFocus(); _active = editor; } };
+                    editor.TextArea.GotKeyboardFocus += (_, args) => { if (args.NewFocus == editor.TextArea) { _parent.Tables.ClearFocus(); _parent.Tables.ClearSelectionsExcept(editor); _parent.Select(_parent.CaretOffset, 0); _active = editor; } };
                     editor.TextChanged += (_, _) => SaveCell(row, column, editor);
                     editor.PreviewKeyDown += (_, e) =>
                     {
@@ -183,9 +183,14 @@ internal sealed class TableViewRegistry : IDisposable, IReadOnlySectionProvider
         }
     }
     internal void ClearFocus() { foreach (var view in _views.Values) view.ClearFocus(); }
+    internal void ClearSelectionsExcept(LiveMarkdownEditor? active)
+    {
+        foreach (var cell in _views.Values.SelectMany(view => view.Cells))
+            if (cell != active && cell.SelectionLength > 0) cell.Select(cell.CaretOffset, 0);
+    }
     private void OnMainFocus(object sender, KeyboardFocusChangedEventArgs args)
     {
-        if (args.NewFocus == _editor.TextArea) ClearFocus();
+        if (args.NewFocus == _editor.TextArea) { ClearFocus(); ClearSelectionsExcept(null); }
         UpdateCaret();
     }
     internal void UpdateCaret()

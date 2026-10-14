@@ -16,6 +16,33 @@ public sealed class AtomicTableTests
 {
     private const string Source = "# Title\n\n| Header | Second |\n| --- | --- |\n| one | two |\n\nafter";
 
+    [Fact]
+    public Task SelectingWordsInDifferentCellsLeavesOnlyOneActiveSelection() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = Source + "\n\n| Other | Table |\n| --- | --- |\n| a | b |" };
+        var outside = new Button { Content = "toolbar" };
+        var panel = new DockPanel(); DockPanel.SetDock(outside, Dock.Bottom); panel.Children.Add(outside); panel.Children.Add(editor);
+        var host = Host(panel);
+        try
+        {
+            host.Show(); host.UpdateLayout();
+            foreach (var cell in editor.Tables.Views.SelectMany(view => view.Cells).ToArray())
+            {
+                Keyboard.Focus(cell.TextArea); cell.Select(0, cell.Text.Length);
+                Assert.Equal(cell.Text, cell.SelectedText);
+                Assert.All(editor.Tables.Views.SelectMany(view => view.Cells).Where(other => other != cell), other => Assert.Equal(0, other.SelectionLength));
+                Assert.Equal(0, editor.SelectionLength);
+            }
+            var selected = editor.EditingTarget;
+            Keyboard.Focus(outside);
+            Assert.NotEqual(0, selected.SelectionLength);
+            Assert.Same(selected, editor.EditingTarget);
+            Keyboard.Focus(editor.TextArea);
+            Assert.All(editor.Tables.Views.SelectMany(view => view.Cells), cell => Assert.Equal(0, cell.SelectionLength));
+        }
+        finally { host.Close(); }
+    });
+
     [Theory]
     [InlineData("\n")]
     [InlineData("\r\n")]

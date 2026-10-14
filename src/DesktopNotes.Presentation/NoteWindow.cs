@@ -251,7 +251,7 @@ public sealed class NoteWindow : Window
             _editor.IsReadOnly = false;
             _editor.Focusable = true;
             _editor.TextArea.Focusable = true;
-            System.Windows.Input.Keyboard.Focus(_editor.TextArea);
+            if (!_editor.IsKeyboardFocusWithin) System.Windows.Input.Keyboard.Focus(_editor.TextArea);
         }
         return false;
     }
