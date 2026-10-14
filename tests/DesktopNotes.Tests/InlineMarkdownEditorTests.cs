@@ -56,7 +56,7 @@ public sealed class InlineMarkdownEditorTests
             editor.Select(0, source.Length); host.UpdateLayout(); Assert.Equal(baseline, Geometry(editor));
             Keyboard.Focus(other); host.UpdateLayout(); Assert.Equal(baseline, Geometry(editor));
             Assert.Equal(source, editor.Text);
-            Assert.DoesNotContain(editor.TextArea.TextView.VisualLines.SelectMany(line => line.Elements), element => element is InlineObjectElement);
+            Assert.DoesNotContain(editor.TextArea.TextView.VisualLines.SelectMany(line => line.Elements), element => element is InlineObjectElement inline && inline.Element is not MarkdownTableView);
         }
         finally { host.Close(); }
     });
@@ -93,14 +93,16 @@ public sealed class InlineMarkdownEditorTests
             host.Show(); host.UpdateLayout();
             var list = editor.TextArea.TextView.VisualLines.First(); Assert.True(list.TextLines.Count > 1);
             Assert.Equal(16, list.TextLines[1].GetDistanceFromCharacterHit(new System.Windows.Media.TextFormatting.CharacterHit(list.TextLines[0].Length, 0)), 1);
-            var rows = editor.TextArea.TextView.VisualLines.Where(line => line.Elements.OfType<MarkdownDecorationElement>()
-                .Any(element => element.Decoration.Kind == InlineMarkdownLayout.DecorationKind.TableEdge)).ToArray();
-            Assert.Equal(2, rows.Length);
-            double[] Edges(VisualLine line) => line.Elements.OfType<MarkdownDecorationElement>()
-                .Where(element => element.Decoration.Kind == InlineMarkdownLayout.DecorationKind.TableGap)
-                .Select(element => line.GetTextLine(element.VisualColumn).GetDistanceFromCharacterHit(new System.Windows.Media.TextFormatting.CharacterHit(element.VisualColumn + 1, 0))).ToArray();
-            var first = Edges(rows[0]); var next = Edges(rows[1]); Assert.Equal(first.Length, next.Length);
-            for (var index = 0; index < first.Length; index++) Assert.Equal(first[index], next[index], 1);
+            var table = Assert.Single(editor.Tables.Views);
+            var grid = Assert.IsType<Grid>(table.Scroll.Content);
+            Assert.Equal(2, grid.ColumnDefinitions.Count);
+            var borders = grid.Children.Cast<Border>().ToArray();
+            Assert.Equal(4, borders.Length);
+            foreach (var column in Enumerable.Range(0, 2))
+            {
+                var cells = borders.Where(cell => Grid.GetColumn(cell) == column).ToArray();
+                Assert.Equal(cells[0].ActualWidth, cells[1].ActualWidth, 1);
+            }
         }
         finally { host.Close(); }
     });

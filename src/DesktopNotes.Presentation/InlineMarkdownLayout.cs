@@ -9,7 +9,7 @@ namespace DesktopNotes.Presentation;
 // No decoration depends on focus or the active line: editing and reading have identical geometry.
 internal sealed class InlineMarkdownLayout
 {
-    internal enum DecorationKind { Hidden, Bullet, Number, Task, Quote, Indent, Rule, TableEdge, TableGap, TableRule, Spacing }
+    internal enum DecorationKind { Hidden, Bullet, Number, Task, Quote, Indent, Rule, TableEdge, TableGap, TableRule, Spacing, Table }
     internal sealed record Cell(int Start, int Length);
     internal sealed record Decoration(int Start, int Length, DecorationKind Kind, string Label = "", double Indent = 0,
         Cell? Cell = null, IReadOnlyList<Cell>? Column = null, IReadOnlyList<IReadOnlyList<Cell>>? Columns = null);
@@ -24,9 +24,15 @@ internal sealed class InlineMarkdownLayout
     private readonly List<(int Start, int End)> _tables = [];
     private readonly List<(int Start, int End, double Indent, int ContentIndent)> _items = [];
 
-    internal static InlineMarkdownLayout Create(string source, MarkdownDocument document)
+    internal static InlineMarkdownLayout Create(string source, MarkdownDocument document, bool inlineOnly = false)
     {
         var layout = new InlineMarkdownLayout();
+        if (inlineOnly)
+        {
+            foreach (var block in document.OfType<LeafBlock>()) if (block.Inline is { } inline) layout.VisitInlines(inline, source);
+            layout.Decorations.Sort((a, b) => a.Start.CompareTo(b.Start));
+            return layout;
+        }
         layout.VisitBlocks(document, source);
         var offset = 0;
         int? previousContentOffset = null;
@@ -212,6 +218,9 @@ internal sealed class InlineMarkdownLayout
     private void DecorateTable(Markdig.Extensions.Tables.Table table, string source)
     {
         _tables.Add((table.Span.Start, table.Span.End));
+        var atomicEnd = table.Span.End + 1;
+        while (atomicEnd > table.Span.Start && source[atomicEnd - 1] is '\r' or '\n') atomicEnd--;
+        Decorations.Add(new(table.Span.Start, atomicEnd - table.Span.Start, DecorationKind.Table));
         var rows = new List<(int Start, string Text, Cell[] Cells)>();
         var offset = table.Span.Start;
         foreach (var raw in source.Substring(table.Span.Start, table.Span.Length).Split('\n'))

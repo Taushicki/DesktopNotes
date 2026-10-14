@@ -10,6 +10,25 @@ public sealed class MarkdownTableEditingTests
 
     private static string Apply(string text, MarkdownTextEdit edit) => text.Remove(edit.Start, edit.Length).Insert(edit.Start, edit.Replacement);
 
+    [Theory]
+    [InlineData("|")]
+    [InlineData("---")]
+    [InlineData(" **bold** ")]
+    [InlineData("  ")]
+    [InlineData("a\\|b")]
+    [InlineData("a\\\\|b")]
+    [InlineData("Привет | мир\nвторая строка")]
+    public void CellCharactersCannotChangeTableStructureAndSurviveRoundTrip(string value)
+    {
+        var table = Assert.Single(MarkdownTableEditing.ReadTables(Table));
+        table.Rows[0][0] = value; table.Rows[1][1] = value;
+        var serialized = MarkdownTableEditing.Serialize(table);
+        var restored = Assert.Single(MarkdownTableEditing.ReadTables(serialized));
+        Assert.Equal(2, restored.ColumnCount); Assert.Equal(2, restored.Rows.Length);
+        Assert.Equal(value, restored.Rows[0][0]); Assert.Equal(value, restored.Rows[1][1]);
+        Assert.Equal(table.Alignment, restored.Alignment);
+    }
+
     [Fact]
     public void RowIsInsertedBeforeFollowingTextWithoutChangingOtherContent()
     {

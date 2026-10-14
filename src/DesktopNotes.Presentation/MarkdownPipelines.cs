@@ -8,9 +8,10 @@ namespace DesktopNotes.Presentation;
 
 internal static class MarkdownPipelines
 {
-    internal static MarkdownPipeline Create()
+    internal static MarkdownPipeline Create(bool tables = true)
     {
-        var builder = new MarkdownPipelineBuilder().UsePipeTables().UseTaskLists().UseEmphasisExtras().UsePreciseSourceLocation().DisableHtml();
+        var builder = new MarkdownPipelineBuilder().UseTaskLists().UseEmphasisExtras().UsePreciseSourceLocation().DisableHtml();
+        if (tables) builder.UsePipeTables();
         builder.InlineParsers.Insert(0, new WikiLinkParser());
         return builder.Build();
     }

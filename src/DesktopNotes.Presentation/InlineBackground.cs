@@ -20,7 +20,7 @@ internal sealed class InlineBackground(LiveMarkdownEditor editor) : IBackgroundR
             var brush = style == InlineMarkdownLayout.Style.Highlight ? editor.Theme.Highlight : editor.Theme.InlineCode;
             foreach (var range in editor.Layout.Styles)
             {
-                if (!range.Style.HasFlag(style) || range.Style.HasFlag(InlineMarkdownLayout.Style.BlockCode) || range.Start > last || range.Start + range.Length < first) continue;
+                if (editor.Tables.Contains(range.Start) || !range.Style.HasFlag(style) || range.Style.HasFlag(InlineMarkdownLayout.Style.BlockCode) || range.Start > last || range.Start + range.Length < first) continue;
                 var geometry = new BackgroundGeometryBuilder { AlignToWholePixels = true, CornerRadius = 1 };
                 geometry.AddSegment(textView, new TextSegment { StartOffset = range.Start, Length = range.Length });
                 if (geometry.CreateGeometry() is { } fill) drawingContext.DrawGeometry(brush, null, fill);

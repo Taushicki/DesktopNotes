@@ -220,7 +220,7 @@ public sealed class NoteWindow : Window
 
     internal void ToggleBoldFormatting()
     {
-        if (_editor.SelectionLength == 0) { _vm.IsBold = !_vm.IsBold; return; }
+        if (_editor.EditingTarget.SelectionLength == 0) { _vm.IsBold = !_vm.IsBold; return; }
         _editor.ToggleBoldSelection();
     }
 

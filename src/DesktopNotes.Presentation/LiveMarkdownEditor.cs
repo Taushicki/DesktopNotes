@@ -17,7 +17,8 @@ namespace DesktopNotes.Presentation;
 
 internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 {
-    private readonly MarkdownPipeline _pipeline = MarkdownPipelines.Create();
+    private readonly MarkdownPipeline _pipeline;
+    private readonly bool _inlineOnly;
     private Note _appearance = new();
     internal NoteTheme Theme { get; private set; } = NoteThemes.Get(NoteColor.Yellow);
     private List<PreviewBlock> _blocks = [];
@@ -38,9 +39,14 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     private readonly SearchPanel _search;
     internal SmoothScrollController SmoothScroll { get; }
     internal TableEdgeControls TableControls { get; }
+    internal TableViewRegistry Tables { get; }
+    internal Note Appearance => _appearance;
+    internal LiveMarkdownEditor EditingTarget => Tables.ActiveCell ?? this;
 
-    internal LiveMarkdownEditor()
+    internal LiveMarkdownEditor(bool tables = true)
     {
+        _pipeline = MarkdownPipelines.Create(tables); _inlineOnly = !tables;
+        Tables = new TableViewRegistry(this, tables);
         Background = Brushes.Transparent; BorderThickness = new Thickness(0); Padding = new Thickness(6);
         FontFamily = new FontFamily("Segoe UI"); FontSize = 14;
         WordWrap = true; ShowLineNumbers = false;
@@ -48,7 +54,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/DesktopNotes;component/EditorScrollBar.xaml", UriKind.Relative) });
         SetTheme(Theme);
         SmoothScroll = new SmoothScrollController(this);
-        TableControls = new TableEdgeControls(this);
+        TableControls = new TableEdgeControls(this, tables);
         Options.CutCopyWholeLine = true; Options.ConvertTabsToSpaces = true; Options.IndentationSize = 2;
         Options.InheritWordWrapIndentation = true;
         Options.ShowSpaces = false; Options.ShowTabs = false; Options.ShowEndOfLine = false; Options.ShowBoxForControlCharacters = false;
@@ -63,10 +69,11 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.TextView.BackgroundRenderers.Add(new InlineBackground(this));
         TextChanged += OnTextChanged;
         Loaded += OnEditorLoaded;
-        SizeChanged += (_, _) => TextArea.TextView.Redraw();
+        SizeChanged += (_, _) => { Tables.UpdateAppearance(); TextArea.TextView.Redraw(); };
         TextArea.TextView.VisualLinesChanged += (_, _) => ContentGeometryChanged?.Invoke();
         PreviewKeyDown += OnKey;
         PreviewTextInput += OnTextInput;
+        DataObject.AddPastingHandler(this, OnPaste);
         TextArea.PreviewMouseLeftButtonDown += OnEditorMouseDown;
         TextArea.Caret.PositionChanged += OnFenceCaretChanged;
         TextArea.SelectionChanged += OnFenceCaretChanged;
@@ -156,15 +163,27 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     private void RefreshPreview()
     {
         if (_disposed) return;
-        if (_previewDisabled) { Layout = new(); _blocks.Clear(); TextArea.TextView.Redraw(); return; }
+        if (_previewDisabled) { Tables.Reset(); Layout = new(); _blocks.Clear(); TextArea.TextView.Redraw(); return; }
         // Parse only when the document changes. Focus and caret movements must never
         // rebuild the text into a different layout.
         if (_parsedText != Text)
         {
             _parsedText = Text;
-            var parsed = Markdig.Markdown.Parse(_parsedText, _pipeline);
-            Layout = InlineMarkdownLayout.Create(_parsedText, parsed);
-            _blocks = parsed.Where(block => block.Span.Start >= 0 && block.Span.Length > 0 && block.Span.End < _parsedText.Length)
+            var parsed = Markdig.Markdown.Parse(_inlineOnly ? "x " + _parsedText.Replace('\r', ' ').Replace('\n', ' ') : _parsedText, _pipeline);
+            if (_inlineOnly)
+            {
+                void Shift(ContainerInline container)
+                {
+                    foreach (var inline in container)
+                    {
+                        inline.Span = new Markdig.Syntax.SourceSpan(inline.Span.Start - 2, inline.Span.End - 2);
+                        if (inline is ContainerInline child) Shift(child);
+                    }
+                }
+                foreach (var block in parsed.OfType<LeafBlock>()) if (block.Inline is { } inline) Shift(inline);
+            }
+            Layout = InlineMarkdownLayout.Create(_parsedText, parsed, _inlineOnly);
+            _blocks = parsed.Where(block => !_inlineOnly).Where(block => block.Span.Start >= 0 && block.Span.Length > 0 && block.Span.End < _parsedText.Length)
                 .Select(block =>
                 {
                     // Keep navigation ranges inside actual content, excluding trailing delimiters.
@@ -173,6 +192,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
                     return new PreviewBlock(block.Span.Start, end - block.Span.Start, block is Markdig.Syntax.CodeBlock, block is Markdig.Extensions.Tables.Table);
                 }).Where(block => block.Length > 0).ToList();
         }
+        Tables.Sync();
         TextArea.TextView.Redraw();
     }
     internal void DisablePreview()
@@ -183,7 +203,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 
     private void OnEditorMouseDown(object sender, MouseButtonEventArgs e)
     {
-        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0 || !_inlineOnly && IsInteractivePreviewElement(e.OriginalSource as DependencyObject)) return;
         if (HandleInteractiveClick(e)) e.Handled = true;
     }
 
@@ -271,10 +291,13 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.Focus();
     }
 
+    internal void FollowWebLink(Uri uri) => OpenWebLinkRequested?.Invoke(uri);
+    internal void FollowNoteLink(string title) => OpenNoteRequested?.Invoke(title);
+
     internal void SetAppearance(Note note)
     {
-        SetTheme(NoteThemes.Get(note.Color));
         _appearance = note; FontSize = note.FontSize; FontWeight = note.IsBold ? FontWeights.Bold : FontWeights.Normal;
+        SetTheme(NoteThemes.Get(note.Color));
         TextArea.TextView.Redraw();
     }
     internal void SetTheme(NoteTheme theme)
@@ -284,11 +307,13 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.Caret.CaretBrush = theme.Foreground;
         if (_search is not null) _search.MarkerBrush = theme.Highlight;
         Resources["DesktopNotes.EditorScrollThumb"] = theme.ScrollThumb;
+        Tables.UpdateAppearance();
         TextArea.TextView.Redraw();
     }
 
     internal void ApplyEdit(MarkdownTextEdit edit)
     {
+        if (!Tables.AllowsEdit(edit.Start, edit.Length)) return;
         using (Document.RunUpdate()) Document.Replace(edit.Start, edit.Length, edit.Replacement);
         Select(edit.Start + edit.SelectionStart, edit.SelectionLength);
         TextArea.Caret.BringCaretToView();
@@ -303,18 +328,31 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             }));
         }
     }
-    internal void ToggleBoldSelection() => ApplyEdit(MarkdownEditingCommands.ToggleInline(Text, SelectionStart, SelectionLength, "**"));
+    internal void ToggleBoldSelection()
+    {
+        var target = EditingTarget;
+        target.ApplyEdit(MarkdownEditingCommands.ToggleInline(target.Text, target.SelectionStart, target.SelectionLength, "**"));
+    }
     internal void SetHeading(int level) => ApplyEdit(MarkdownEditingCommands.SetHeading(Text, SelectionStart, SelectionLength, level));
 
     internal bool HandleEscape()
     {
+        if (Tables.ActiveCell is { } cell) return cell.HandleEscape() || Tables.Leave();
         if (!_search.IsClosed) { _search.Close(); return true; }
         if (SelectionLength > 0) { Select(CaretOffset, 0); return true; }
         return false;
     }
 
+    private void OnPaste(object sender, DataObjectPastingEventArgs e)
+    {
+        if (Tables.ActiveCell is not null || IsReadOnly) return;
+        if (e.DataObject.GetData(DataFormats.UnicodeText) is string text && Tables.ProtectTyping(text)) e.CancelCommand();
+    }
+
     private void OnTextInput(object sender, TextCompositionEventArgs e)
     {
+        if (Tables.ActiveCell is not null) return;
+        if (!IsReadOnly && Tables.ProtectTyping(e.Text)) { e.Handled = true; return; }
         if (IsReadOnly || e.Text.Length != 1 || (Keyboard.Modifiers & (ModifierKeys.Control | ModifierKeys.Alt)) != 0) return;
         var edit = MarkdownEditingCommands.PairCharacter(Text, SelectionStart, SelectionLength, e.Text[0]);
         if (edit is not null) { ApplyEdit(edit); e.Handled = true; }
@@ -327,6 +365,14 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     internal bool HandleShortcut(Key key, ModifierKeys modifiers)
     {
         if (IsReadOnly) return false;
+        if (Tables.ActiveCell is { } cell)
+        {
+            if (key == Key.Escape && modifiers == ModifierKeys.None) return Tables.Leave();
+            if (key == Key.Z && modifiers is ModifierKeys.Control or (ModifierKeys.Control | ModifierKeys.Shift) || key == Key.Y && modifiers == ModifierKeys.Control) { if (key == Key.Z && modifiers == ModifierKeys.Control) Undo(); else Redo(); return true; }
+            if (Tables.Navigate(key, modifiers)) return true;
+            return cell.HandleShortcut(key, modifiers);
+        }
+        if (Tables.ProtectDelete(key)) return true;
         if (modifiers == ModifierKeys.None && SelectionLength == 0 && key is Key.Up or Key.Down or Key.Left or Key.Right && TryLeaveCodeBlock(key)) return true;
         if (key == Key.Back && modifiers == ModifierKeys.None && SelectionLength == 0 && TryUnwrapCodeBlock()) return true;
         if (key == Key.Enter && modifiers == ModifierKeys.Shift)
@@ -406,13 +452,13 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             }
             if (key == Key.Z) { Document.UndoStack.Redo(); return true; }
         }
-        if (key == Key.Enter && modifiers == ModifierKeys.None && SelectionLength == 0 && TryCreateFencedCodeBlock()) return true;
+        if (key == Key.Enter && modifiers == ModifierKeys.None && SelectionLength == 0 && !_inlineOnly && TryCreateFencedCodeBlock()) return true;
         if (key == Key.Enter && modifiers == ModifierKeys.None && SelectionLength == 0 &&
             !_blocks.Any(block => block.IsCode && CaretOffset >= block.Start && CaretOffset <= block.Start + block.Length))
         { ApplyEdit(MarkdownEditingCommands.ContinueLine(Text, CaretOffset, Layout.ParentListItemPrefix(Text, CaretOffset))); return true; }
         if (key == Key.Tab && modifiers is ModifierKeys.None or ModifierKeys.Shift)
         {
-            if (!MoveTableCell(modifiers == ModifierKeys.Shift))
+            if (!Tables.EnterAtCaret(modifiers == ModifierKeys.Shift) && !MoveTableCell(modifiers == ModifierKeys.Shift))
             {
                 var line = Document.GetLineByOffset(CaretOffset);
                 var list = Layout.Decorations.Any(part => part.Start == line.Offset && part.Kind is InlineMarkdownLayout.DecorationKind.Bullet or InlineMarkdownLayout.DecorationKind.Number or InlineMarkdownLayout.DecorationKind.Task);
@@ -528,6 +574,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 
     internal void AppendFormattingMenu(ContextMenu menu)
     {
+        if (EditingTarget != this) { EditingTarget.AppendFormattingMenu(menu); return; }
         var formatting = new MenuItem { Header = UiText.Get("Оформление текста") };
         void Add(string label, Action action)
         {
@@ -562,7 +609,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     {
         while (current is not null)
         {
-            if (current is CheckBox || current is Hyperlink && (Keyboard.Modifiers & ModifierKeys.Control) != 0) return true;
+            if (current is MarkdownTableView || current is CheckBox || current is Hyperlink && (Keyboard.Modifiers & ModifierKeys.Control) != 0) return true;
             current = current is FrameworkContentElement content ? content.Parent :
                 current is Visual ? VisualTreeHelper.GetParent(current) ?? (current as FrameworkElement)?.TemplatedParent ?? LogicalTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current);
         }
@@ -573,8 +620,11 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         public override int GetFirstInterestedOffset(int startOffset) => editor.Layout.Decorations.FirstOrDefault(part => part.Start >= startOffset)?.Start ?? -1;
         public override VisualLineElement? ConstructElement(int offset)
         {
-            var part = editor.Layout.Decorations.FirstOrDefault(part => part.Start == offset);
+            var part = editor.Layout.Decorations.FirstOrDefault(part => part.Start == offset && part.Kind == InlineMarkdownLayout.DecorationKind.Table && editor.Tables.Get(offset) is not null)
+                ?? editor.Layout.Decorations.FirstOrDefault(part => part.Start == offset && part.Kind != InlineMarkdownLayout.DecorationKind.Table);
             if (part is null) return null;
+            if (part.Kind == InlineMarkdownLayout.DecorationKind.Table && editor.Tables.Get(part.Start) is { } table)
+                return new InlineObjectElement(part.Length, table);
             return new MarkdownDecorationElement(part, () =>
             {
                 if (part.Kind != InlineMarkdownLayout.DecorationKind.Task) return;
@@ -675,6 +725,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
 
         protected override void ColorizeLine(ICSharpCode.AvalonEdit.Document.DocumentLine line)
         {
+            if (editor.Tables.Contains(line.Offset)) return;
             foreach (var range in editor.Layout.Styles)
             {
                 var start = Math.Max(line.Offset, range.Start); var end = Math.Min(line.EndOffset, range.Start + range.Length);
@@ -701,7 +752,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     public void Dispose()
     {
         if (_disposed) return; _disposed = true;
-        SmoothScroll.Dispose(); TableControls.Dispose();
+        SmoothScroll.Dispose(); TableControls.Dispose(); Tables.Dispose();
         System.ComponentModel.PropertyChangedEventManager.RemoveHandler(UiText.Current, OnLanguageChanged, string.Empty);
         Loaded -= OnEditorLoaded;
         TextChanged -= OnTextChanged; PreviewKeyDown -= OnKey;
@@ -709,6 +760,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.Caret.PositionChanged -= OnFenceCaretChanged;
         TextArea.SelectionChanged -= OnFenceCaretChanged;
         TextArea.TextEntering -= OnFenceTextEntering;
+        DataObject.RemovePastingHandler(this, OnPaste);
         PreviewTextInput -= OnTextInput; _search.Uninstall();
     }
 
