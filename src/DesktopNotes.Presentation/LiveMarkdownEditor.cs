@@ -77,6 +77,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.PreviewMouseLeftButtonDown += OnEditorMouseDown;
         TextArea.Caret.PositionChanged += OnFenceCaretChanged;
         TextArea.SelectionChanged += OnFenceCaretChanged;
+        TextArea.TextEntering += OnTableTextEntering;
         TextArea.TextEntering += OnFenceTextEntering;
         _search = SearchPanel.Install(this); _search.Localization = new LocalizedSearch(); _search.MarkerBrush = Theme.Highlight;
         System.Windows.Automation.AutomationProperties.SetName(this, UiText.Get("Текст заметки — Markdown Live Preview"));
@@ -118,6 +119,10 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
             }
         }
         StyleScrollbars(this);
+    }
+    private void OnTableTextEntering(object sender, TextCompositionEventArgs args)
+    {
+        if (!IsReadOnly && Tables.ProtectTyping(args.Text)) args.Handled = true;
     }
     private void OnFenceTextEntering(object sender, TextCompositionEventArgs e)
     {
@@ -307,7 +312,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.Caret.CaretBrush = theme.Foreground;
         if (_search is not null) _search.MarkerBrush = theme.Highlight;
         Resources["DesktopNotes.EditorScrollThumb"] = theme.ScrollThumb;
-        Tables.UpdateAppearance();
+        Tables.UpdateAppearance(); Tables.UpdateCaret();
         TextArea.TextView.Redraw();
     }
 
@@ -525,7 +530,8 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
     {
         var table = UiText.Get("| Заголовок 1 | Заголовок 2 |\n| --- | --- |\n|  |  |\n");
         var prefix = SelectionStart > 0 && Text[SelectionStart - 1] != '\n' ? "\n\n" : "";
-        ApplyEdit(new(SelectionStart, SelectionLength, prefix + table, prefix.Length + 2, 11));
+        ApplyEdit(new(SelectionStart, SelectionLength, prefix + table, prefix.Length, 0));
+        Tables.Get(SelectionStart)?.FocusCell(0, 0);
     }
 
     internal bool OpenLinkAtCaret()
@@ -759,6 +765,7 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
         TextArea.PreviewMouseLeftButtonDown -= OnEditorMouseDown;
         TextArea.Caret.PositionChanged -= OnFenceCaretChanged;
         TextArea.SelectionChanged -= OnFenceCaretChanged;
+        TextArea.TextEntering -= OnTableTextEntering;
         TextArea.TextEntering -= OnFenceTextEntering;
         DataObject.RemovePastingHandler(this, OnPaste);
         PreviewTextInput -= OnTextInput; _search.Uninstall();

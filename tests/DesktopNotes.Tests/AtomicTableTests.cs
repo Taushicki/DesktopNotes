@@ -2,6 +2,8 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using System.Windows.Interop;
+using System.Runtime.InteropServices;
 using DesktopNotes.Application;
 using DesktopNotes.Domain;
 using DesktopNotes.Presentation;
@@ -13,6 +15,29 @@ namespace DesktopNotes.Tests;
 public sealed class AtomicTableTests
 {
     private const string Source = "# Title\n\n| Header | Second |\n| --- | --- |\n| one | two |\n\nafter";
+
+    [Fact]
+    public Task TypingBelowNewTableKeepsItsVisualBlock() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = "# Title\n\n" };
+        var host = Host(editor);
+        try
+        {
+            host.Show(); host.UpdateLayout(); editor.Select(editor.Text.Length, 0); editor.InsertTable();
+            host.UpdateLayout(); Pump();
+            Assert.True(editor.Tables.Views.Any(), "Before input: " + editor.Text);
+            Assert.Same(editor.Tables.Views.Single().Cells.First(), editor.EditingTarget);
+            Assert.Same(System.Windows.Media.Brushes.Transparent, editor.TextArea.Caret.CaretBrush);
+            Keyboard.Focus(editor.TextArea); editor.Select(editor.Text.Length, 0);
+            Assert.Same(editor.Theme.Foreground, editor.TextArea.Caret.CaretBrush);
+            foreach (var text in new[] { "x", "|", "-", "more" })
+            { editor.TextArea.PerformTextInput(text); host.UpdateLayout(); Pump(); }
+            Assert.EndsWith("\n\nx|-more", editor.Text);
+            Assert.True(editor.Tables.Views.Any(), "After input: " + editor.Text);
+            Assert.Contains(editor.TextArea.TextView.VisualLines.SelectMany(line => line.Elements), element => element is ICSharpCode.AvalonEdit.Rendering.InlineObjectElement);
+        }
+        finally { host.Close(); }
+    });
 
     [Fact]
     public Task CellEditingProtectsSchemaSpacesFormattingAndUndo() => OnSta(() =>
@@ -66,6 +91,21 @@ public sealed class AtomicTableTests
             Assert.True(table.ActualWidth <= editor.TextArea.TextView.ActualWidth);
             table.Scroll.ScrollToHorizontalOffset(100); host.UpdateLayout();
             Assert.True(table.Scroll.HorizontalOffset > 0);
+            var bounds = table.BodyBounds()!.Value;
+            var point = new Point(bounds.Left + 10, bounds.Top + 10);
+            Assert.True(editor.Tables.HandleWheel(point, -120, ModifierKeys.Shift)); host.UpdateLayout();
+            Assert.True(table.Scroll.HorizontalOffset > 100);
+            var shifted = table.Scroll.HorizontalOffset;
+            Assert.True(editor.Tables.HandleWheel(point, 30, ModifierKeys.None, nativeHorizontal: true)); host.UpdateLayout();
+            Assert.True(table.Scroll.HorizontalOffset > shifted);
+            var screen = editor.TextArea.TextView.PointToScreen(point);
+            var packedPoint = ((long)(ushort)(short)screen.Y << 16) | (ushort)(short)screen.X;
+            var beforeNative = table.Scroll.HorizontalOffset;
+            SendMessage(new WindowInteropHelper(host).Handle, 0x020E, (nint)(120 << 16), (nint)packedPoint);
+            host.UpdateLayout();
+            Assert.True(table.Scroll.HorizontalOffset > beforeNative);
+            Assert.False(editor.Tables.HandleWheel(point, 120, ModifierKeys.None));
+            Assert.False(editor.Tables.HandleWheel(new Point(-100, -100), 120, ModifierKeys.Shift));
             Assert.Equal(0, editor.HorizontalOffset);
             Assert.Equal(ScrollBarVisibility.Disabled, table.Scroll.VerticalScrollBarVisibility);
             editor.IsReadOnly = true;
@@ -116,6 +156,9 @@ public sealed class AtomicTableTests
             first = editor.Tables.Views.First();
             Assert.Equal(3, first.Model.Rows.Length);
             Assert.Same(first.Cells.ElementAt(5), editor.EditingTarget);
+            Assert.Same(System.Windows.Media.Brushes.Transparent, editor.TextArea.Caret.CaretBrush);
+            editor.SetAppearance(new Note { Color = NoteColor.GitHubDark });
+            Assert.Same(System.Windows.Media.Brushes.Transparent, editor.TextArea.Caret.CaretBrush);
             var second = editor.Tables.Views.Last(); second.FocusCell(1, 0); Pump();
             var cell = second.Cells.ElementAt(2); Assert.Same(cell, editor.EditingTarget);
             cell.Select(0, 1); editor.ToggleBoldSelection();
@@ -128,6 +171,9 @@ public sealed class AtomicTableTests
         }
         finally { host.Close(); }
     });
+
+    [DllImport("user32.dll")]
+    private static extern nint SendMessage(nint handle, int message, nint wParam, nint lParam);
 
     private static Window Host(object content) => new() { Content = content, Width = 350, Height = 500, Left = -10000, Top = -10000, ShowInTaskbar = false };
     private static void Pump()

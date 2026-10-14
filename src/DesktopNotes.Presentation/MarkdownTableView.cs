@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using System.Windows.Interop;
 using DesktopNotes.Application;
 using DesktopNotes.Domain;
 using ICSharpCode.AvalonEdit.Rendering;
@@ -18,6 +19,7 @@ internal sealed class MarkdownTableView : Grid, IDisposable
     private readonly Dictionary<(int Row, int Column), LiveMarkdownEditor> _editors = [];
     private bool _syncing;
     private LiveMarkdownEditor? _active;
+    private double _horizontalTarget;
     internal MarkdownTableModel Model { get; private set; }
     internal ScrollViewer Scroll { get; }
     internal LiveMarkdownEditor? ActiveCell => _parent.IsReadOnly ? null : _active;
@@ -35,7 +37,7 @@ internal sealed class MarkdownTableView : Grid, IDisposable
         Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/DesktopNotes;component/TableStyles.xaml", UriKind.Relative) });
         Scroll = new ScrollViewer { Content = _cells, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto, VerticalScrollBarVisibility = ScrollBarVisibility.Disabled, Style = (System.Windows.Style)Resources["TableScrollViewer"] };
         SetColumn(Scroll, 1); Children.Add(Scroll);
-        Scroll.ScrollChanged += (_, _) => _parent.TableControls?.UpdatePointer(null);
+        Scroll.ScrollChanged += (_, _) => { _horizontalTarget = Scroll.HorizontalOffset; _parent.TableControls?.UpdatePointer(null); };
         Sync(model);
     }
 
@@ -147,6 +149,14 @@ internal sealed class MarkdownTableView : Grid, IDisposable
             editor.TextArea.Focus(); editor.Select(0, 0); editor.BringIntoView();
         }));
     }
+    internal bool ScrollHorizontal(int delta, bool nativeHorizontal)
+    {
+        if (Scroll.ScrollableWidth <= 0) return false;
+        var distance = delta / 120d * _parent.FontSize * 3;
+        _horizontalTarget = Math.Clamp(_horizontalTarget + (nativeHorizontal ? distance : -distance), 0, Scroll.ScrollableWidth);
+        Scroll.ScrollToHorizontalOffset(_horizontalTarget);
+        return true;
+    }
     internal Rect? BodyBounds()
     {
         if (!IsVisible || Scroll.ActualHeight <= 0) return null;
@@ -161,15 +171,57 @@ internal sealed class TableViewRegistry : IDisposable, IReadOnlySectionProvider
     private readonly bool _enabled;
     private readonly Dictionary<int, MarkdownTableView> _views = [];
     private readonly List<CollapsedLineSection> _collapsed = [];
+    private HwndSource? _source;
     internal IEnumerable<MarkdownTableView> Views => _views.Values;
     internal LiveMarkdownEditor? ActiveCell => _views.Values.Select(view => view.ActiveCell).FirstOrDefault(cell => cell is not null);
     internal TableViewRegistry(LiveMarkdownEditor editor, bool enabled)
     {
         _editor = editor; _enabled = enabled;
-        if (enabled) { editor.TextArea.GotKeyboardFocus += OnMainFocus; editor.TextArea.ReadOnlySectionProvider = this; }
+        if (enabled)
+        {
+            editor.TextArea.GotKeyboardFocus += OnMainFocus; editor.TextArea.ReadOnlySectionProvider = this;
+            editor.PreviewMouseWheel += OnWheel; editor.Loaded += OnLoaded; editor.Unloaded += OnUnloaded;
+        }
     }
     internal void ClearFocus() { foreach (var view in _views.Values) view.ClearFocus(); }
-    private void OnMainFocus(object sender, KeyboardFocusChangedEventArgs args) { if (args.NewFocus == _editor.TextArea) ClearFocus(); }
+    private void OnMainFocus(object sender, KeyboardFocusChangedEventArgs args)
+    {
+        if (args.NewFocus == _editor.TextArea) ClearFocus();
+        UpdateCaret();
+    }
+    internal void UpdateCaret()
+    {
+        if (!_enabled) return;
+        var nestedFocus = _editor.TextArea.IsKeyboardFocusWithin && !_editor.TextArea.IsKeyboardFocused;
+        _editor.TextArea.Caret.CaretBrush = nestedFocus ? Brushes.Transparent : _editor.Theme.Foreground;
+        if (nestedFocus) _editor.TextArea.Caret.Hide();
+    }
+    internal bool HandleWheel(Point point, int delta, ModifierKeys modifiers, bool nativeHorizontal = false)
+    {
+        if (!nativeHorizontal && modifiers != ModifierKeys.Shift) return false;
+        var view = _views.Values.FirstOrDefault(view => view.BodyBounds() is { } bounds && bounds.Contains(point));
+        return view?.ScrollHorizontal(delta, nativeHorizontal) ?? false;
+    }
+    private void OnWheel(object sender, MouseWheelEventArgs args)
+    {
+        if (HandleWheel(args.GetPosition(_editor.TextArea.TextView), args.Delta, Keyboard.Modifiers)) args.Handled = true;
+    }
+    private void OnLoaded(object sender, RoutedEventArgs args)
+    {
+        var source = PresentationSource.FromVisual(_editor) as HwndSource;
+        if (_source == source) return;
+        _source?.RemoveHook(OnWindowMessage); _source = source; _source?.AddHook(OnWindowMessage);
+    }
+    private void OnUnloaded(object sender, RoutedEventArgs args) { _source?.RemoveHook(OnWindowMessage); _source = null; }
+    private nint OnWindowMessage(nint handle, int message, nint wParam, nint lParam, ref bool handled)
+    {
+        const int MouseHorizontalWheel = 0x020E;
+        if (handled || message != MouseHorizontalWheel || !_editor.IsVisible) return 0;
+        var delta = (short)((long)wParam >> 16);
+        var point = new Point((short)((long)lParam & 0xffff), (short)((long)lParam >> 16));
+        handled = HandleWheel(_editor.TextArea.TextView.PointFromScreen(point), delta, ModifierKeys.None, nativeHorizontal: true);
+        return 0;
+    }
     public bool CanInsert(int offset) => !_editor.IsReadOnly && !_views.Values.Any(view => offset > view.Model.Start && offset < view.Model.Start + view.Model.Length);
     public IEnumerable<ISegment> GetDeletableSegments(ISegment segment)
     {
@@ -263,8 +315,24 @@ internal sealed class TableViewRegistry : IDisposable, IReadOnlySectionProvider
             if (_editor.SelectionLength != 0) continue;
             if (_editor.CaretOffset == start) { _editor.ApplyEdit(new(start, 0, text + view.Model.NewLine + view.Model.NewLine, text.Length, 0)); return true; }
             if (_editor.CaretOffset == end) { _editor.ApplyEdit(new(end, 0, view.Model.NewLine + view.Model.NewLine + text, view.Model.NewLine.Length * 2 + text.Length, 0)); return true; }
+            // Markdig requires a paragraph boundary after the table. Keep that
+            // boundary when typing on the first empty source line below it.
+            var next = _editor.Document.GetLineByOffset(end).NextLine;
+            if (next is not null && _editor.CaretOffset == next.Offset)
+            {
+                _editor.ApplyEdit(new(next.Offset, 0, view.Model.NewLine + text, view.Model.NewLine.Length + text.Length, 0)); return true;
+            }
         }
         return false;
     }
-    public void Dispose() { if (_enabled) _editor.TextArea.GotKeyboardFocus -= OnMainFocus; Reset(); }
+    public void Dispose()
+    {
+        if (_enabled)
+        {
+            _editor.TextArea.GotKeyboardFocus -= OnMainFocus; _editor.PreviewMouseWheel -= OnWheel;
+            _editor.Loaded -= OnLoaded; _editor.Unloaded -= OnUnloaded;
+            _source?.RemoveHook(OnWindowMessage); _source = null;
+        }
+        Reset();
+    }
 }
