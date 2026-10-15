@@ -70,6 +70,8 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
     private NoteService _notes = null!;
     private AutosaveCoordinator _save = null!;
     private Forms.NotifyIcon? _tray;
+    private System.Drawing.Icon? _trayIcon;
+    private (bool Dark, int Size)? _trayIconKey;
     private TrayMenu? _trayMenu;
     private Window? _settings;
     private bool _exiting;
@@ -182,13 +184,33 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
     private void CreateTray()
     {
         _trayMenu = new TrayMenu(CreateNote, ShowNotes, OpenSettings, () => _save.FlushAsync(), ExitAsync);
-        _tray = new Forms.NotifyIcon { Icon = System.Drawing.SystemIcons.Information, Visible = true };
+        _tray = new Forms.NotifyIcon();
+        UpdateTrayIcon();
+        _tray.Visible = true;
+        SystemEvents.UserPreferenceChanged += OnTrayPreferenceChanged;
+        SystemEvents.DisplaySettingsChanged += OnTrayDisplayChanged;
         _tray.MouseUp += (_, e) =>
         {
             if (e.Button == Forms.MouseButtons.Right && !_exiting)
                 _trayMenu.Open(WindowsAppTheme.IsDark, _saveError);
         };
         _tray.DoubleClick += (_, _) => CreateNote();
+    }
+
+    private void OnTrayPreferenceChanged(object sender, UserPreferenceChangedEventArgs e) => QueueTrayIconUpdate();
+    private void OnTrayDisplayChanged(object? sender, EventArgs e) => QueueTrayIconUpdate();
+    private void QueueTrayIconUpdate()
+    {
+        if (Dispatcher.HasShutdownStarted) return;
+        Dispatcher.BeginInvoke(new Action(() => { if (!_exiting && _tray is not null) UpdateTrayIcon(); }));
+    }
+    private void UpdateTrayIcon()
+    {
+        var key = (WindowsAppTheme.IsTaskbarDark, Forms.SystemInformation.SmallIconSize.Width);
+        if (_tray is null || _trayIconKey == key) return;
+        var next = AppIcons.LoadTray(key.Item1, key.Item2);
+        _tray.Icon = next;
+        var previous = _trayIcon; _trayIcon = next; _trayIconKey = key; previous?.Dispose();
     }
 
     private void OnSaveFailed(Exception error)
@@ -261,7 +283,9 @@ public sealed class NotesApp(string[] arguments, string dataPath, IAppLogger log
         SystemEvents.DisplaySettingsChanged -= OnDisplayChanged;
         _board?.Dispose();
         _trayMenu?.Close();
-        _tray?.Dispose();
+        SystemEvents.UserPreferenceChanged -= OnTrayPreferenceChanged;
+        SystemEvents.DisplaySettingsChanged -= OnTrayDisplayChanged;
+        _tray?.Dispose(); _trayIcon?.Dispose();
         _instance?.Dispose();
         _services?.Dispose();
         base.OnExit(e);
