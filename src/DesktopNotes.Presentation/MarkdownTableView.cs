@@ -20,7 +20,10 @@ internal sealed class MarkdownTableView : Grid, IDisposable
     private bool _syncing;
     private LiveMarkdownEditor? _active;
     private double _horizontalTarget;
+    private readonly TextAnchor _startAnchor;
+    private readonly TextAnchor _contentAnchor;
     internal MarkdownTableModel Model { get; private set; }
+    internal int? TrackedStart => _startAnchor.IsDeleted || _contentAnchor.IsDeleted ? null : _startAnchor.Offset;
     internal ScrollViewer Scroll { get; }
     internal LiveMarkdownEditor? ActiveCell => _parent.IsReadOnly ? null : _active;
     internal void ClearFocus() => _active = null;
@@ -29,6 +32,11 @@ internal sealed class MarkdownTableView : Grid, IDisposable
     internal MarkdownTableView(LiveMarkdownEditor parent, MarkdownTableModel model)
     {
         _parent = parent; Model = model;
+        _startAnchor = parent.Document.CreateAnchor(model.Start);
+        _startAnchor.MovementType = AnchorMovementType.AfterInsertion;
+        // A start anchor alone can survive deletion at a boundary and collide
+        // with the next table. An interior anchor identifies removed content.
+        _contentAnchor = parent.Document.CreateAnchor(model.Start + 1);
         ColumnDefinitions.Add(new() { Width = new GridLength(1, GridUnitType.Star) });
         ColumnDefinitions.Add(new() { Width = new GridLength(12) });
         RowDefinitions.Add(new() { Height = GridLength.Auto });
@@ -46,7 +54,11 @@ internal sealed class MarkdownTableView : Grid, IDisposable
         try
         {
             var rebuild = _editors.Count != model.Rows.Length * model.ColumnCount || Model.ColumnCount != model.ColumnCount || Model.Rows.Length != model.Rows.Length;
+            var changed = rebuild || !Model.Alignment.SequenceEqual(model.Alignment) ||
+                Model.Rows.Where((row, index) => !row.SequenceEqual(model.Rows[index])).Any();
             Model = model;
+            // Offset-only changes must preserve the cell editors and their visual lines.
+            if (!changed) return;
             if (rebuild)
             {
                 _active = null;
@@ -105,9 +117,12 @@ internal sealed class MarkdownTableView : Grid, IDisposable
         Resources["DesktopNotes.EditorScrollThumb"] = theme.ScrollThumb;
         foreach (var (position, editor) in _editors)
         {
-            editor.SetAppearance(_parent.Appearance with { FontSize = _parent.FontSize, IsBold = position.Row == 0 || _parent.Appearance.IsBold,
-                TextAlignment = Model.Alignment[position.Column].StartsWith(':') && Model.Alignment[position.Column].EndsWith(':') ? NoteTextAlignment.Center :
-                    Model.Alignment[position.Column].EndsWith(':') ? NoteTextAlignment.Right : NoteTextAlignment.Left });
+            var bold = position.Row == 0 || _parent.Appearance.IsBold;
+            var alignment = Model.Alignment[position.Column].StartsWith(':') && Model.Alignment[position.Column].EndsWith(':') ? NoteTextAlignment.Center :
+                Model.Alignment[position.Column].EndsWith(':') ? NoteTextAlignment.Right : NoteTextAlignment.Left;
+            if (editor.FontSize != _parent.FontSize || editor.Appearance.IsBold != bold ||
+                editor.Appearance.Color != _parent.Appearance.Color || editor.Appearance.TextAlignment != alignment || editor.Theme != theme)
+                editor.SetAppearance(_parent.Appearance with { FontSize = _parent.FontSize, IsBold = bold, TextAlignment = alignment });
             // DefaultLineHeight can still refer to the previous font until the
             // next layout pass. Measure the current styled text instead.
             var minimum = Math.Max(1, editor.Document.LineCount) * editor.FontSize * editor.FontFamily.LineSpacing;
@@ -119,8 +134,8 @@ internal sealed class MarkdownTableView : Grid, IDisposable
         var width = 0d;
         for (var c = 0; c < Model.ColumnCount; c++)
         {
-            var natural = _editors.Where(pair => pair.Key.Column == c)
-                .Max(pair => InlineMarkdownMetrics.Measure(pair.Value, new(0, pair.Value.Document.TextLength)));
+            var natural = Enumerable.Range(0, Model.Rows.Length)
+                .Max(row => { var cell = _editors[(row, c)]; return InlineMarkdownMetrics.Measure(cell, new(0, cell.Document.TextLength)); });
             var size = Math.Max(100 * _parent.FontSize / 14, natural + 20);
             _cells.ColumnDefinitions[c].Width = new GridLength(size); width += size;
         }
@@ -297,16 +312,21 @@ internal sealed class TableViewRegistry : IDisposable, IReadOnlySectionProvider
         ClearFocus(); _editor.TextArea.Focus(); return true;
     }
     internal bool Navigate(Key key, ModifierKeys modifiers) => _views.Values.Any(view => view.ActiveCell is not null && view.Navigate(key, modifiers));
-    internal void Sync()
+    internal void Sync(IReadOnlyList<MarkdownTableModel> models)
     {
         if (!_enabled) return;
         foreach (var section in _collapsed) section.Uncollapse(); _collapsed.Clear();
-        var models = MarkdownTableEditing.ReadTables(_editor.Text);
-        foreach (var key in _views.Keys.Except(models.Select(model => model.Start)).ToArray()) { _views[key].Dispose(); _views.Remove(key); }
+        // Document anchors follow edits before a table without changing its identity.
+        var remaining = _views.Values.ToHashSet();
+        var byStart = remaining.Where(view => view.TrackedStart.HasValue).GroupBy(view => view.TrackedStart!.Value)
+            .ToDictionary(group => group.Key, group => new Queue<MarkdownTableView>(group));
+        _views.Clear();
         foreach (var model in models)
         {
-            if (_views.TryGetValue(model.Start, out var view)) view.Sync(model);
-            else _views.Add(model.Start, new MarkdownTableView(_editor, model));
+            if (byStart.TryGetValue(model.Start, out var matches) && matches.TryDequeue(out var view))
+            { remaining.Remove(view); view.Sync(model); }
+            else view = new MarkdownTableView(_editor, model);
+            _views.Add(model.Start, view);
             var first = _editor.Document.GetLineByOffset(model.Start);
             var end = model.Start + model.Length;
             var displayEnd = InlineMarkdownLayout.TableDisplayEnd(_editor.Text, end);
@@ -314,6 +334,7 @@ internal sealed class TableViewRegistry : IDisposable, IReadOnlySectionProvider
             if (first.NextLine is { } next && last.LineNumber > first.LineNumber)
                 _collapsed.Add(_editor.TextArea.TextView.CollapseLines(next, last));
         }
+        foreach (var view in remaining) view.Dispose();
     }
     internal MarkdownTableView? Get(int start) => _views.GetValueOrDefault(start);
     internal bool Contains(int offset) => _views.Values.Any(view => offset >= view.Model.Start && offset < view.Model.Start + view.Model.Length);
