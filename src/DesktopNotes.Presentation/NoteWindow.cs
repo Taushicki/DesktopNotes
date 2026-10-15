@@ -139,7 +139,7 @@ public sealed class NoteWindow : Window
         // inset and the collapse button's space inside the text area only.
         _body.Margin = new Thickness(0, 0, -7.5, 0);
         _editor.Padding = new Thickness(6, 6, 0, 6);
-        _editor.TextArea.Margin = new Thickness(0, 0, 41.5, 0);
+        _editor.TextArea.Margin = new Thickness(0, 0, 12, 0);
         Grid.SetRow(_body, 1); root.Children.Add(_body);
         var shell = new Grid();
         shell.Children.Add(root);
@@ -220,7 +220,7 @@ public sealed class NoteWindow : Window
 
     internal void ToggleBoldFormatting()
     {
-        if (_editor.SelectionLength == 0) { _vm.IsBold = !_vm.IsBold; return; }
+        if (_editor.EditingTarget.SelectionLength == 0) { _vm.IsBold = !_vm.IsBold; return; }
         _editor.ToggleBoldSelection();
     }
 
@@ -251,7 +251,7 @@ public sealed class NoteWindow : Window
             _editor.IsReadOnly = false;
             _editor.Focusable = true;
             _editor.TextArea.Focusable = true;
-            System.Windows.Input.Keyboard.Focus(_editor.TextArea);
+            if (!_editor.IsKeyboardFocusWithin) System.Windows.Input.Keyboard.Focus(_editor.TextArea);
         }
         return false;
     }

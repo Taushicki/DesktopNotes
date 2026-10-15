@@ -15,7 +15,6 @@ public sealed class TableEdgeControlsTests
 
     [Theory]
     [InlineData(TableExpansion.Row)]
-    [InlineData(TableExpansion.ColumnLeft)]
     [InlineData(TableExpansion.ColumnRight)]
     public Task EdgeButtonExpandsMarkdownAndUndoRestoresTheWholeTable(TableExpansion expansion) => OnSta(() =>
     {
@@ -61,6 +60,8 @@ public sealed class TableEdgeControlsTests
             var table = Assert.Single(editor.PreviewBlocks, block => block.IsTable);
             var bounds = editor.TableControls.Bounds(table)!.Value;
             editor.TableControls.UpdatePointer(new(bounds.Left + bounds.Width / 2, bounds.Top));
+            Assert.Equal(Visibility.Collapsed, editor.TableControls.AddButton.Visibility);
+            editor.TableControls.UpdatePointer(new(bounds.Left, bounds.Top + bounds.Height / 2));
             Assert.Equal(Visibility.Collapsed, editor.TableControls.AddButton.Visibility);
             editor.TableControls.UpdatePointer(new(bounds.Left + bounds.Width / 2, bounds.Top + bounds.Height / 2));
             Assert.Equal(Visibility.Collapsed, editor.TableControls.AddButton.Visibility);

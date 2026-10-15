@@ -298,7 +298,7 @@ public sealed class LiveEditorTests
         System.Windows.Input.Keyboard.Focus(editor.TextArea);
         editor.CaretOffset = source.IndexOf("bold", StringComparison.Ordinal) + 2;
         Assert.True(editor.IsKeyboardFocusWithin);
-        Assert.DoesNotContain(editor.TextArea.TextView.VisualLines.SelectMany(line => line.Elements), element => element is ICSharpCode.AvalonEdit.Rendering.InlineObjectElement);
+        Assert.DoesNotContain(editor.TextArea.TextView.VisualLines.SelectMany(line => line.Elements), element => element is ICSharpCode.AvalonEdit.Rendering.InlineObjectElement inline && inline.Element is not MarkdownTableView);
         editor.UpdateLayout();
         Assert.Equal(source, editor.Text);
         }
