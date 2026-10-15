@@ -43,8 +43,11 @@ public static class MarkdownTableEditing
 
 
     public static IReadOnlyList<MarkdownTableModel> ReadTables(string text)
+        => ReadTables(text, Markdown.Parse(text, Pipeline));
+
+    public static IReadOnlyList<MarkdownTableModel> ReadTables(string text, Markdig.Syntax.MarkdownDocument document)
     {
-        return Markdown.Parse(text, Pipeline).OfType<Table>().Select(table =>
+        return document.OfType<Table>().Select(table =>
         {
             var end = table.Span.End + 1;
             while (end > table.Span.Start && text[end - 1] is '\r' or '\n') end--;

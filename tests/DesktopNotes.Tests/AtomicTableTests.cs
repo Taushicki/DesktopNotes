@@ -17,6 +17,78 @@ public sealed class AtomicTableTests
     private const string Source = "# Title\n\n| Header | Second |\n| --- | --- |\n| one | two |\n\nafter";
 
     [Fact]
+    public Task TypingAroundTablesRetainsCellEditorsAppearanceAndMeasurements() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = Source + "\n\n| More | Cells |\n| --- | --- |\n| a | b |" };
+        var host = Host(editor);
+        try
+        {
+            host.Show(); host.UpdateLayout(); Pump();
+            var tables = editor.Tables.Views.ToArray();
+            var cells = tables.SelectMany(table => table.Cells).ToArray();
+            var appearances = cells.Select(cell => cell.Appearance).ToArray();
+            var layouts = cells.Select(cell => cell.Layout).ToArray();
+            var measurements = cells.Select(InlineMarkdownMetrics.MeasurementCount).ToArray();
+            foreach (var above in new[] { true, false })
+            {
+                var offset = above ? 2 : editor.Text.IndexOf("after", StringComparison.Ordinal);
+                editor.Document.Insert(offset, "typed"); host.UpdateLayout(); Pump();
+                Assert.Equal(tables, editor.Tables.Views.ToArray());
+                Assert.Equal(cells, editor.Tables.Views.SelectMany(table => table.Cells).ToArray());
+                for (var i = 0; i < cells.Length; i++) Assert.Same(appearances[i], cells[i].Appearance);
+                Assert.Equal(layouts, cells.Select(cell => cell.Layout).ToArray());
+                Assert.Equal(measurements, cells.Select(InlineMarkdownMetrics.MeasurementCount).ToArray());
+                foreach (var table in tables) Assert.Same(table, editor.Tables.Get(table.Model.Start));
+            }
+            editor.Undo(); editor.Undo(); host.UpdateLayout(); Pump();
+            Assert.Equal(tables, editor.Tables.Views.ToArray());
+            Assert.Equal(Source.IndexOf('|'), tables[0].Model.Start);
+        }
+        finally { host.Close(); }
+    });
+
+    [Fact]
+    public Task InsertingAndDeletingTablesKeepsOnlyTheCorrectExistingViews() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = Source };
+        var original = Assert.Single(editor.Tables.Views);
+        var start = original.Model.Start;
+        const string inserted = "| New | Table |\n| --- | --- |\n| a | b |\n\n";
+        editor.Document.Insert(start, inserted);
+        Assert.Equal(2, editor.Tables.Views.Count());
+        Assert.Same(original, editor.Tables.Views.Last());
+        var added = editor.Tables.Views.First();
+        Assert.NotSame(original, added);
+        editor.Document.Remove(start, inserted.Length);
+        Assert.Same(original, Assert.Single(editor.Tables.Views));
+        editor.Document.Replace(original.Model.Start, original.Model.Length, inserted.TrimEnd());
+        Assert.NotSame(original, Assert.Single(editor.Tables.Views));
+        Assert.Equal("New", editor.Tables.Views.Single().Model.Rows[0][0]);
+    });
+
+    [Fact]
+    public Task EditingOneCellDoesNotRestyleOrRemeasureOtherCells() => OnSta(() =>
+    {
+        using var editor = new LiveMarkdownEditor { Text = Source };
+        var host = Host(editor);
+        try
+        {
+            host.Show(); host.UpdateLayout(); Pump();
+            var table = Assert.Single(editor.Tables.Views);
+            var cells = table.Cells.ToArray();
+            var unchanged = new[] { cells[0], cells[1], cells[3] };
+            var appearances = unchanged.Select(cell => cell.Appearance).ToArray();
+            var measurements = unchanged.Select(InlineMarkdownMetrics.MeasurementCount).ToArray();
+            cells[2].Document.Insert(0, "a much wider value "); host.UpdateLayout(); Pump();
+            Assert.Equal(cells, table.Cells.ToArray());
+            for (var i = 0; i < unchanged.Length; i++) Assert.Same(appearances[i], unchanged[i].Appearance);
+            Assert.Equal(measurements, unchanged.Select(InlineMarkdownMetrics.MeasurementCount).ToArray());
+            Assert.Equal(cells[2].Text, table.Model.Rows[1][0]);
+        }
+        finally { host.Close(); }
+    });
+
+    [Fact]
     public Task MainCaretSkipsTableEdgeAndHiddenSeparatorWithoutChangingText() => OnSta(() =>
     {
         using var editor = new LiveMarkdownEditor { Text = Source };

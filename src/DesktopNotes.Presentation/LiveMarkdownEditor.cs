@@ -196,8 +196,8 @@ internal sealed class LiveMarkdownEditor : TextEditor, IDisposable
                     while (end > block.Span.Start && _parsedText[end - 1] is '\r' or '\n') end--;
                     return new PreviewBlock(block.Span.Start, end - block.Span.Start, block is Markdig.Syntax.CodeBlock, block is Markdig.Extensions.Tables.Table);
                 }).Where(block => block.Length > 0).ToList();
+            Tables.Sync(MarkdownTableEditing.ReadTables(_parsedText, parsed));
         }
-        Tables.Sync();
         TextArea.TextView.Redraw();
     }
     internal void DisablePreview()
