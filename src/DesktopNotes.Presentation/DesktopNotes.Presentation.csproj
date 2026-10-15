@@ -6,12 +6,16 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>DesktopNotes</AssemblyName>
-    <Version>0.1.4</Version>
+    <Version>0.1.5</Version>
+    <ApplicationIcon>Assets/App.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <!-- The WPF host uses its manifest for DPI; WinForms supplies only NotifyIcon/Screen. -->
     <NoWarn>$(NoWarn);WFO0003</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <Resource Include="Assets/App.ico" />
+    <Resource Include="Assets/TrayLight.ico" />
+    <Resource Include="Assets/TrayDark.ico" />
     <None Include="../../THIRD-PARTY-NOTICES.md" Link="THIRD-PARTY-NOTICES.md" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <ProjectReference Include="../DesktopNotes.Infrastructure/DesktopNotes.Infrastructure.csproj" />
     <PackageReference Include="Markdig" Version="0.41.3" />

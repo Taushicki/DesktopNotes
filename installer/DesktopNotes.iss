@@ -29,6 +29,7 @@ OutputBaseFilename=DesktopNotes-Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile={#PublishDir}\..\..\src\DesktopNotes.Presentation\Assets\App.ico
 UninstallDisplayIcon={app}\DesktopNotes.exe
 AppMutex=Local\DesktopNotes.Installation
 CloseApplications=no

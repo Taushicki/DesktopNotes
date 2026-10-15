@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:DesktopNotes.Presentation"
         xmlns:app="clr-namespace:DesktopNotes.Application;assembly=DesktopNotes.Application"
-        Title="{local:Tr Настройки}" Width="540" Height="720" WindowStartupLocation="CenterScreen"
+        Icon="/DesktopNotes;component/Assets/App.ico" Title="{local:Tr Настройки}" Width="540" Height="720" WindowStartupLocation="CenterScreen"
         WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True" Background="Transparent"
         FontFamily="Segoe UI" FontSize="14" Foreground="{DynamicResource NoteMenuForeground}"
         UseLayoutRounding="True" SnapsToDevicePixels="True">
